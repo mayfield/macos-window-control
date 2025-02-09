@@ -1,8 +1,20 @@
 macos-window-control
 --------
-
 Abusing the Accessibility APIs to resize windows from the command line.
 
+
+Building
+========
+```shell
+make
+```
+
+Running
+========
+```shell
+dist/macos-window-control.arm64 resize Safari 1000 500
+dist/macos-window-control.arm64 zoom 2
+```
 
 ```
 :; ./dist/macos-window-control.arm64 
