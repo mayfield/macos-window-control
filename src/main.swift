@@ -2,15 +2,33 @@ import Foundation
 import Cocoa
 
 
-struct E: Error {
-    var m: String
+class CmdError: Error {
+    var message: String
+    let code: Int32
+
+    init(_ message: String, code: Int32? = 127) {
+        self.message = message
+        self.code = code!
+    }
+}
+
+class PermError: CmdError {
+    init(_ message: String) {
+        super.init(message, code: 128)
+    }
+}
+
+class NotFoundError: CmdError {
+    init(_ message: String) {
+        super.init(message, code: 129)
+    }
 }
 
 
 func getCGSConnectionID() throws -> Int {
     let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "CGSMainConnectionID")
     if fnSym == nil {
-        throw E(m: "Failed to find CGSMainConnectionID function")
+        throw CmdError("Failed to find CGSMainConnectionID function")
     }
     typealias Args = @convention(c) (UnsafeRawPointer?) -> Int
     let fn = unsafeBitCast(fnSym, to: Args.self)
@@ -21,7 +39,7 @@ func getCGSConnectionID() throws -> Int {
 func setZoom(_ cid: Int, _ factor: Double, cx: Double, cy: Double) throws {
     let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "CGSSetZoomParameters")
     if fnSym == nil {
-        throw E(m: "Failed to find CGSSetZoomParameters function")
+        throw CmdError("Failed to find CGSSetZoomParameters function")
     }
     typealias Args = @convention(c) (Int, UnsafePointer<CGPoint>, Double, Int8) -> Void
     let fn = unsafeBitCast(fnSym, to: Args.self)
@@ -35,7 +53,7 @@ func setZoom(_ cid: Int, _ factor: Double, cx: Double, cy: Double) throws {
 
 func getMainScreenSize() throws -> (Double, Double) {
     guard let screen = NSScreen.main else {
-        throw E(m: "Main screen unavailable")
+        throw CmdError("Main screen unavailable")
     }
     return (screen.frame.width, screen.frame.height)
 }
@@ -43,7 +61,7 @@ func getMainScreenSize() throws -> (Double, Double) {
 
 func getMenuBarHeight() throws -> Double {
     guard let screen = NSScreen.main else {
-        throw E(m: "Main screen unavailable")
+        throw CmdError("Main screen unavailable")
     }
     return screen.frame.height - screen.visibleFrame.height
 }
@@ -56,12 +74,12 @@ func getAppMainWindow(_ app: NSRunningApplication) throws -> AXUIElement {
     axRes = AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindow)
     if axRes != .success {
         if (axRes == AXError.apiDisabled) {
-            print("Go to System -> Privacy and Security -> Accessibility, then enable this tool")
+            throw PermError("Enable this tool in System Settings -> Privacy and Security -> Accessibility")
         }
-        throw E(m: "Failed to get main window: \(axRes.rawValue)")
+        throw CmdError("Failed to get main window: \(axRes.rawValue)")
     }
     guard let window = mainWindow as! AXUIElement? else {
-        throw E(m: "Unexpected unwrap error")
+        throw CmdError("Unexpected unwrap error")
     }
     return window
 }
@@ -71,12 +89,12 @@ func getWinAttrValue(_ window: AXUIElement, _ attr: String) throws -> AnyObject 
     var _val: AnyObject?
     let res = AXUIElementCopyAttributeValue(window, attr as CFString, &_val)
     if res != .success {
-        throw E(m: "Failed to get window attr [\(attr)]: \(res.rawValue)")
+        throw CmdError("Failed to get window attr [\(attr)]: \(res.rawValue)")
     }
     if let val = _val {
         return val
     } else {
-        throw E(m: "Window attr [\(attr)] is NULL")
+        throw CmdError("Window attr [\(attr)] is NULL")
     }
 }
 
@@ -84,7 +102,7 @@ func getWinAttrValue(_ window: AXUIElement, _ attr: String) throws -> AnyObject 
 func setWinAttrValue(_ window: AXUIElement, _ attr: String, _ value: AnyObject) throws {
     let res = AXUIElementSetAttributeValue(window, attr as CFString, value)
     if res != .success {
-        throw E(m: "Failed to set window attr [\(attr)]: \(res.rawValue)")
+        throw CmdError("Failed to set window attr [\(attr)]: \(res.rawValue)")
     }
 }
    
@@ -92,7 +110,7 @@ func setWinAttrValue(_ window: AXUIElement, _ attr: String, _ value: AnyObject) 
 func getAppByName(_ name: String) throws -> NSRunningApplication {
     let runningApps = NSWorkspace.shared.runningApplications
     guard let app = runningApps.first(where: {$0.localizedName == name}) else {
-        throw E(m: "App not found")
+        throw NotFoundError("App not found")
     }
     return app
 }
@@ -106,7 +124,7 @@ func getAppSize(_ appName: String) throws -> CGRect {
     var rect = CGRect.zero
     if !AXValueGetValue(_pos as! AXValue, .cgPoint, &rect.origin) ||
        !AXValueGetValue(_size as! AXValue, .cgSize, &rect.size) {
-        throw E(m: "Invalid window info")
+        throw CmdError("Invalid window info")
     }
     return rect
 }
@@ -167,7 +185,7 @@ func usageAndExit() {
 }
 
 
-func main() {
+func main() throws {
     let args = CommandLine.arguments
     if args.count < 2 {
         return usageAndExit()
@@ -189,9 +207,9 @@ func main() {
                 print("Invalid numbers for x and/or y")
                 return usageAndExit()
             }
-            try! resizeCmd(appName, width, height, x: x, y: y)
+            try resizeCmd(appName, width, height, x: x, y: y)
         } else {
-            try! resizeCmd(appName, width, height)
+            try resizeCmd(appName, width, height)
         }
     } else if cmdName == "zoom" {
         if args.count < 3 {
@@ -207,16 +225,16 @@ func main() {
                 print("Invalid numbers for center-x, or center-y")
                 return usageAndExit()
             }
-            try! zoomCmd(factor, cx: cx, cy: cy)
+            try zoomCmd(factor, cx: cx, cy: cy)
         } else {
-            try! zoomCmd(factor)
+            try zoomCmd(factor)
         }
     } else if cmdName == "fullscreen" {
         if args.count < 3 {
             return usageAndExit()
         }
         let appName = args[2]
-        try! fullscreenCmd(appName)
+        try fullscreenCmd(appName)
     } else {
         if cmdName != "--help" {
             print("Invalid COMMAND:", cmdName)
@@ -225,4 +243,9 @@ func main() {
     }
 }
 
-main()
+do {
+    try main()
+} catch let e as CmdError {
+    print(e.message)
+    exit(e.code)
+}
