@@ -36,18 +36,55 @@ func getCGSConnectionID() throws -> Int {
 }
 
 
-func setZoom(_ cid: Int, _ factor: Double, cx: Double, cy: Double) throws {
+func setZoom(_ cid: Int, _ factor: Double, cx: Double, cy: Double, smooth: Bool? = nil) throws {
     let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "CGSSetZoomParameters")
     if fnSym == nil {
         throw CmdError("Failed to find CGSSetZoomParameters function")
     }
-    typealias Args = @convention(c) (Int, UnsafePointer<CGPoint>, Double, Int8) -> Void
+    typealias Args = @convention(c) (Int, UnsafePointer<CGPoint>, Double, Bool) -> Void
     let fn = unsafeBitCast(fnSym, to: Args.self)
     // X, Y get floored, round first...
     var origin = CGPoint(x: round(cx), y: round(cy))
+    let _smooth = smooth != nil ? smooth : factor > 1
+    // HACK: This private function doesn't play well with the built-in zoom feature.
+    // We need to dirty the state (using inverted smooth value is sufficient) before
+    // Sending our final values..  Validate this with:
+    //  1. setZoom(...args)
+    //  2. Accessablity shortcuts to affect zoom (i.e. ctrl + mouse scroll)
+    //  3. setZoom(...args)  # ensure args are identical to step 1.
+    // Expect no corruption on screen if it worked.
     withUnsafePointer(to: &origin) { originPtr in
-        fn(cid, originPtr, factor, 1)
+        fn(cid, originPtr, factor, !_smooth!)
     }
+    withUnsafePointer(to: &origin) { originPtr in
+        fn(cid, originPtr, factor, _smooth!)
+    }
+}
+
+
+func getZoom(_ cid: Int) throws -> (Double, CGPoint, Bool) {
+    let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "CGSGetZoomParameters")
+    if fnSym == nil {
+        throw CmdError("Failed to find CGSGetZoomParameters function")
+    }
+    typealias Args = @convention(c) (
+        Int,
+        UnsafeMutablePointer<CGPoint>,
+        UnsafeMutablePointer<Double>,
+        UnsafeMutablePointer<Bool>
+    ) -> Void
+    let fn = unsafeBitCast(fnSym, to: Args.self)
+    var origin = CGPoint.zero
+    var factor: Double = 0.0
+    var smooth: Bool = false
+    withUnsafeMutablePointer(to: &origin) { originPtr in
+        withUnsafeMutablePointer(to: &factor) { factorPtr in
+            withUnsafeMutablePointer(to: &smooth) { smoothPtr in
+                fn(cid, originPtr, factorPtr, smoothPtr)
+            }
+        }
+    }
+    return (factor, origin, smooth)
 }
 
 
@@ -105,7 +142,7 @@ func setWinAttrValue(_ window: AXUIElement, _ attr: String, _ value: AnyObject) 
         throw CmdError("Failed to set window attr [\(attr)]: \(res.rawValue)")
     }
 }
-   
+
 
 func getAppByName(_ name: String) throws -> NSRunningApplication {
     let runningApps = NSWorkspace.shared.runningApplications
@@ -142,12 +179,20 @@ func resizeCmd(_ appName: String, _ width: Double, _ height: Double, x: Double? 
 }
 
 
-func zoomCmd(_ factor: Double, cx: Double? = nil, cy: Double? = nil) throws {
+func zoomCmd(_ factor: Double? = nil, cx: Double? = nil, cy: Double? = nil) throws {
     let cid = try getCGSConnectionID()
-    if cx == nil || cy == nil {
-        try setZoom(cid, factor, cx: 0, cy: 0)
+    if factor == nil {
+        let (factor, origin, smooth) = try getZoom(cid)
+        print("Zoom:", factor)
+        print("Origin:", origin)
+        print("Smooth:", smooth)
+        return
     } else {
-        try setZoom(cid, factor, cx: cx!, cy: cy!)
+        if cx == nil || cy == nil {
+            try setZoom(cid, factor!, cx: 0, cy: 0)
+        } else {
+            try setZoom(cid, factor!, cx: cx!, cy: cy!)
+        }
     }
 }
 
@@ -175,7 +220,7 @@ func usageAndExit() {
     print("    Example: \(prog) resize ZwiftAppSilicon 1920 1080")
     print("")
     print("  Command 'zoom':")
-    print("    Args: FACTOR [CENTER_X CENTER_Y]")
+    print("    Args: [FACTOR [CENTER_X CENTER_Y]]")
     print("    Example: \(prog) zoom 1.2 960 640")
     print("")
     print("  Command 'fullscreen':")
@@ -207,13 +252,13 @@ func main() throws {
                 print("Invalid numbers for x and/or y")
                 return usageAndExit()
             }
-            try resizeCmd(appName, width, height, x: x, y: y)
+            return try resizeCmd(appName, width, height, x: x, y: y)
         } else {
-            try resizeCmd(appName, width, height)
+            return try resizeCmd(appName, width, height)
         }
     } else if cmdName == "zoom" {
         if args.count < 3 {
-            return usageAndExit()
+            return try zoomCmd()
         }
         guard let factor = Double(args[2]) else {
             print("Invalid number for factor")
@@ -225,16 +270,16 @@ func main() throws {
                 print("Invalid numbers for center-x, or center-y")
                 return usageAndExit()
             }
-            try zoomCmd(factor, cx: cx, cy: cy)
+            return try zoomCmd(factor, cx: cx, cy: cy)
         } else {
-            try zoomCmd(factor)
+            return try zoomCmd(factor)
         }
     } else if cmdName == "fullscreen" {
         if args.count < 3 {
             return usageAndExit()
         }
         let appName = args[2]
-        try fullscreenCmd(appName)
+        return try fullscreenCmd(appName)
     } else {
         if cmdName != "--help" {
             print("Invalid COMMAND:", cmdName)
