@@ -6,6 +6,10 @@
   "description": "Control windows and zoom on a Mac",
   "main": "js/index.mjs",
   "gypfile": true,
+  "scripts": {
+    "nopreinstall": "make c-lib",
+    "install": "node-gyp rebuild"
+  },
   "dependencies": {
     "bindings": "1.5.0"
   }
