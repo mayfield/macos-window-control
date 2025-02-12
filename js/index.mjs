@@ -1,6 +1,20 @@
 import * as bindings from 'bindings';
 const mwc = bindings.default('mwc');
 
+
+export function resizeAppWindow({appName, width, height, x=0, y=0, activate=false}) {
+    mwc.resizeAppWindow(JSON.stringify({appName, width, height, x, y, activate}));
+}
+
+export function getMainScreenSize() {
+    return JSON.parse(mwc.getMainScreenSize());
+}
+
+export function getMenuBarHeight() {
+    return JSON.parse(mwc.getMenuBarHeight());
+}
+
+/*
 try {
     console.log(mwc.getMainScreenSize());
     console.log(mwc.getMenuBarHeight());
@@ -37,3 +51,4 @@ try {
 } catch(e) {
     console.warn("cauth it", e);
 }
+*/
