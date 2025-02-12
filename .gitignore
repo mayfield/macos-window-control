@@ -2,4 +2,8 @@
 *.pem
 *.crx
 *.DS_Store
-dist
+build/
+obj/
+.xcode-project/
+node_modules/
+dist/
