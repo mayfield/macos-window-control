@@ -2,8 +2,8 @@
 *.pem
 *.crx
 *.DS_Store
+.node-build
 macos-window-control
 build/
-.obj/
 .xcode-project/
 node_modules/

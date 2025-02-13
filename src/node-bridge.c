@@ -7,49 +7,54 @@
 #include <node_api.h>
 
 // For simplicity we use the same interface for everything.  All funcs
-// use a JSON based char* input argument and/or a char* output buffer along
-// with int size for the output buffer for response values.  The swift
-// func returns a positive value to indicate how many bytes will copied
-// into the output buffer or < 0 on error.
+// take four arguments: (jsonArgs, jsonArgsSiz, &retJson, &retJsonSize)
+// The swift func will return a positive value to indicate how many bytes
+// were copied into the return buffer or < 0 on error.  If the retJson
+// buffer is insufficiently sized it will be clipped and this should
+// be considered an internal error.
 int mwc_getMainScreenSize(char*, int);
 int mwc_getMenuBarHeight(char*, int);
-int mwc_resizeAppWindow(char*, int);
+int mwc_resizeAppWindow(char*, int, char*, int);
+int mwc_getZoom(char*, int);
 
 
 // Basically everything in node_api uses this error handling conv...
 #define NAPI_CALL(env, the_call)                                   \
     do {                                                           \
         if ((the_call) != napi_ok) {                               \
-            const napi_extended_error_info *error_info;            \
-            napi_get_last_error_info((env), &error_info);          \
-            bool is_pending;                                       \
-            const char* err_message = error_info->error_message;   \
-            napi_is_exception_pending((env), &is_pending);         \
-            if (!is_pending) {                                     \
-                const char* error_message = err_message != NULL ?  \
-                err_message :                                      \
-                "empty error message";                             \
-                napi_throw_error((env), NULL, error_message);      \
-            }                                                      \
+            ensure_throw((env));                                   \
             return NULL;                                           \
         }                                                          \
     } while (0)
 
 
-static napi_value swiftCallWithReturn(napi_env env, int (*fptr)(char*, int)) {
-    char outBuf[0xffff] = {0};
+static void ensure_throw(napi_env env) {
+    const napi_extended_error_info *error_info;
+    napi_get_last_error_info(env, &error_info);
+    bool is_pending;
+    const char* err_message = error_info->error_message;
+    napi_is_exception_pending(env, &is_pending);
+    if (!is_pending) {
+        const char* error_message = err_message != NULL ? err_message : "internal error";
+        napi_throw_error(env, NULL, error_message);
+    }
+}
+
+
+static napi_value swiftCallNoArgs(napi_env env, int (*fptr)(char*, int)) {
+    char ret_buf[0xffff] = {0};
     int size;
-    if ((size = fptr(outBuf, (int) sizeof(outBuf))) <= 0) {
+    if ((size = fptr(ret_buf, (int) sizeof(ret_buf))) <= 0) {
         napi_throw_error(env, NULL, "swift call failed");
         return NULL;
     }
     napi_value json;
-    NAPI_CALL(env, napi_create_string_utf8(env, outBuf, size, &json));
+    NAPI_CALL(env, napi_create_string_utf8(env, ret_buf, size, &json));
     return json;
 }
 
 
-static napi_value swiftCallWithArgs(napi_env env, napi_callback_info info, int (*fptr)(char*, int)) {
+static napi_value swiftCall(napi_env env, napi_callback_info info, int (*fptr)(char*, int, char*, int)) {
     size_t argc = 1;
     napi_value args[1];
     NAPI_CALL(env, napi_get_cb_info(env, info, &argc, args, NULL, NULL));
@@ -73,34 +78,53 @@ static napi_value swiftCallWithArgs(napi_env env, napi_callback_info info, int (
         memset(json_ptr, 0, buf_len);
     }
     // Though shalt not return from here on... (use cleanup)
+    napi_value ret = NULL;
     if (napi_get_value_string_utf8(env, args[0], json_ptr, buf_len, NULL) != napi_ok) {
+        ensure_throw(env);
         goto cleanup;
     }
-    if (fptr(json_ptr, (int) json_len_nonull) != 0) {
+    char ret_buf[0xffff] = {0};
+    int size;
+    if ((size = fptr(json_ptr, (int) json_len_nonull, ret_buf, (int) sizeof(ret_buf))) <= 0) {
         napi_throw_error(env, NULL, "swift call failed");
         goto cleanup;
     }
+    if (size > (int) sizeof(ret_buf)) {
+        napi_throw_error(env, NULL, "swift call response buffer overflow");
+        goto cleanup;
+    }
+    napi_value json;
+    if (napi_create_string_utf8(env, ret_buf, size, &json) != napi_ok) {
+        ensure_throw(env);
+        goto cleanup;
+    }
+    ret = json;
 
 cleanup:
     if (json_ptr != json_stack) {
         free(json_ptr);
     }
-    return NULL;
+    return ret;
 }
 
 
 static napi_value getMainScreenSize(napi_env env, napi_callback_info info) {
-    return swiftCallWithReturn(env, mwc_getMainScreenSize);
+    return swiftCallNoArgs(env, mwc_getMainScreenSize);
 }
 
 
 static napi_value getMenuBarHeight(napi_env env, napi_callback_info info) {
-    return swiftCallWithReturn(env, mwc_getMenuBarHeight);
+    return swiftCallNoArgs(env, mwc_getMenuBarHeight);
 }
 
 
 static napi_value resizeAppWindow(napi_env env, napi_callback_info info) {
-    return swiftCallWithArgs(env, info, mwc_resizeAppWindow);
+    return swiftCall(env, info, mwc_resizeAppWindow);
+}
+
+
+static napi_value getZoom(napi_env env, napi_callback_info info) {
+    return swiftCallNoArgs(env, mwc_getZoom);
 }
 
 
@@ -116,6 +140,10 @@ static napi_value Init(napi_env env, napi_value exports) {
     }, {
         .utf8name = "resizeAppWindow",
         .method = resizeAppWindow,
+        .attributes = napi_default
+    }, {
+        .utf8name = "getZoom",
+        .method = getZoom,
         .attributes = napi_default
     }};
     NAPI_CALL(env, napi_define_properties(env, exports, sizeof(props) / sizeof(props[0]), props));

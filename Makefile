@@ -1,21 +1,46 @@
 SC_FLAGS := -Osize 
+CLI := macos-window-control
+
+SRCS := $(wildcard src/*)
+TESTS := $(wildcard test/*)
+OBJ := obj
+NODE_BUILD := .node-build
 
 
-all: cli
+default: $(CLI) node-build
+
+########
+
+node-build: $(NODE_BUILD)
+
+$(NODE_BUILD): $(SRCS) Makefile
+	npm rebuild
+	touch $@
+
+node_modules:
 	npm install
 
-cli: .obj
-	swiftc src/core.swift src/main.swift -target arm64-apple-macos11 $(SC_FLAGS) -o .obj/macos-window-control.arm64
-	swiftc src/core.swift src/main.swift -target x86_64-apple-macos11 $(SC_FLAGS) -o .obj/macos-window-control.x86_64
-	lipo -create .obj/macos-window-control.arm64 .obj/macos-window-control.x86_64 -output macos-window-control
+cli: $(CLI)
 
-c-lib: .obj
-	swiftc src/core.swift src/c-lib.swift -emit-library -target arm64-apple-macos11 $(SC_FLAGS) -static -o .obj/mwc.a.arm64
-	swiftc src/core.swift src/c-lib.swift -emit-library -target x86_64-apple-macos11 $(SC_FLAGS) -static -o .obj/mwc.a.x86_64
-	lipo -create .obj/mwc.a.arm64 .obj/mwc.a.x86_64 -output .obj/mwc.a
+$(CLI): $(SRCS) Makefile
+	swiftc src/core.swift src/main.swift -target arm64-apple-macos11 $(SC_FLAGS) -o $(OBJ)/$(CLI).arm64
+	swiftc src/core.swift src/main.swift -target x86_64-apple-macos11 $(SC_FLAGS) -o $(OBJ)/$(CLI).x86_64
+	lipo -create $(OBJ)/$(CLI).arm64 $(OBJ)/$(CLI).x86_64 -output $(CLI)
 
-.obj:
-	mkdir -p .obj
+c-lib: $(SRCS) Makefile
+	swiftc src/core.swift src/c-lib.swift -emit-library -target arm64-apple-macos11 $(SC_FLAGS) -static -o $(OBJ)/mwc.a.arm64
+	swiftc src/core.swift src/c-lib.swift -emit-library -target x86_64-apple-macos11 $(SC_FLAGS) -static -o $(OBJ)/mwc.a.x86_64
+	lipo -create $(OBJ)/mwc.a.arm64 $(OBJ)/mwc.a.x86_64 -output $(OBJ)/mwc.a
+
+test: $(TESTS) Makefile
+	node --test
 
 clean:
-	rm -rf build .obj
+	rm -rf build $(OBJ)/* $(NODE_BUILD)
+
+realclean: clean
+	rm -rf node_modules
+
+########
+
+.PHONY: clean realclean
