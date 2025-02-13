@@ -48,7 +48,7 @@ public func setZoom(_ factor: Double, cx: Double, cy: Double, smooth: Bool? = ni
     // We need to dirty the state (using inverted smooth value is sufficient) before
     // Sending our final values..  Validate this with:
     //  1. setZoom(...args)
-    //  2. Accessablity shortcuts to affect zoom (i.e. ctrl + mouse scroll)
+    //  2. Accessibility shortcuts to affect zoom (i.e. ctrl + mouse scroll)
     //  3. setZoom(...args)  # ensure args are identical to step 1.
     // Expect no corruption on screen if it worked.
     withUnsafePointer(to: &origin) { originPtr in
@@ -166,7 +166,8 @@ public func getAppWindowSize(_ appName: String) throws -> CGRect {
 }
 
 
-public func resizeAppWindow(_ appName: String, _ width: Double, _ height: Double, x: Double? = nil, y: Double? = nil, activate: Bool? = nil) throws {
+public func resizeAppWindow(_ appName: String, _ width: Double, _ height: Double,
+                            x: Double? = nil, y: Double? = nil, activate: Bool? = nil) throws {
     let app = try getAppByName(appName)
     let window = try getAppMainWindow(app)
     // X, Y get treated like floored Ints, round first...
