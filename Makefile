@@ -33,7 +33,7 @@ c-lib: $(SRCS) Makefile
 	lipo -create $(OBJ)/mwc.a.arm64 $(OBJ)/mwc.a.x86_64 -output $(OBJ)/mwc.a
 
 test: $(TESTS) Makefile
-	node --test
+	node --test 'test/*'
 
 clean:
 	rm -rf build $(OBJ)/* $(NODE_BUILD)
@@ -43,4 +43,4 @@ realclean: clean
 
 ########
 
-.PHONY: clean realclean
+.PHONY: clean realclean test

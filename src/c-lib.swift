@@ -24,7 +24,6 @@ struct SuccessResp: Encodable {
 struct ErrorResp: Encodable {
     struct Error: Encodable {
         let type: String
-        let description: String
         let message: String
     }
 
@@ -52,16 +51,11 @@ func objDecode<T: Decodable>(_ dataPtr: UnsafePointer<CChar>, size: CInt, type: 
 
 
 func wrapError(_ e: Error) -> ErrorResp {
-    var message = "generic error"
-    if let mwcError = e as? MWCError {
-        message = mwcError.message
-    }
     return ErrorResp(
         success: false,
         error: ErrorResp.Error(
             type: String(describing: type(of: e)),
-            description: String(describing: e),
-            message: message
+            message: (e as? MWCError)?.message ?? String(describing: e)
         )
     )
 }
