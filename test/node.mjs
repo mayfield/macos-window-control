@@ -116,7 +116,6 @@ test('spiral', async () => {
     const centerY = height / 2;
     const circleSize = (Math.min(width, height) / 2) * 0.5;
     const targetInterval = (1000 / 60) - 1;
-    const s = performance.now();
     try {
         for (let i = 0; i < 1000; i++) {
             const factor = 2 - Math.cos(i / 40);
@@ -126,10 +125,9 @@ test('spiral', async () => {
                 centerY + Math.sin(i / 8) * radius
             ];
             mwc.setZoom({factor, center});
-            //await new Promise(r => setTimeout(r, targetInterval));
+            await new Promise(r => setTimeout(r, targetInterval));
         }
     } finally {
         mwc.setZoom({factor: 1});
     }
-    console.error("took", performance.now() - s);
 });
