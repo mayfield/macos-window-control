@@ -32,7 +32,7 @@ c-lib: $(SRCS) Makefile
 	swiftc src/core.swift src/c-lib.swift -emit-library -target x86_64-apple-macos11 $(SC_FLAGS) -static -o $(OBJ)/mwc.a.x86_64
 	lipo -create $(OBJ)/mwc.a.arm64 $(OBJ)/mwc.a.x86_64 -output $(OBJ)/mwc.a
 
-test: $(TESTS) Makefile
+test: $(TESTS) Makefile node-build
 	node --test 'test/*'
 
 clean:

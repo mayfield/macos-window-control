@@ -1,7 +1,14 @@
 import Foundation
 import Cocoa
 
-var coreGraphicsConnId: Int? = nil
+
+typealias SetZoomFunc = @convention(c) (Int, UnsafePointer<CGPoint>, Double, Bool) -> Void
+typealias GetZoomFunc = @convention(c) (
+    Int,
+    UnsafeMutablePointer<CGPoint>,
+    UnsafeMutablePointer<Double>,
+    UnsafeMutablePointer<Bool>
+) -> Void
 
 
 class MWCError: Error {
@@ -34,6 +41,7 @@ public struct WindowApp: Encodable {
 }
 
 
+var coreGraphicsConnId: Int? = nil
 func getCGSConnectionID() throws -> Int {
     if coreGraphicsConnId == nil {
         let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "CGSMainConnectionID")
@@ -48,16 +56,41 @@ func getCGSConnectionID() throws -> Int {
 }
 
 
-public func setZoom(_ factor: Double, cx: Double, cy: Double, smooth: Bool? = nil) throws {
-    let cid = try getCGSConnectionID()
-    let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "CGSSetZoomParameters")
-    if fnSym == nil {
-        throw MWCError("Failed to find CGSSetZoomParameters function")
+var setZoomFunc: SetZoomFunc? = nil
+func getSetZoomFunc() throws -> SetZoomFunc {
+    if setZoomFunc == nil {
+        let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "CGSSetZoomParameters")
+        if fnSym == nil {
+            throw MWCError("Failed to find CGSSetZoomParameters function")
+        }
+        setZoomFunc = unsafeBitCast(fnSym, to: SetZoomFunc.self)
     }
-    typealias Args = @convention(c) (Int, UnsafePointer<CGPoint>, Double, Bool) -> Void
-    let fn = unsafeBitCast(fnSym, to: Args.self)
-    // X, Y get floored, round first...
-    var origin = CGPoint(x: round(cx), y: round(cy))
+    return setZoomFunc!
+}
+
+
+var getZoomFunc: GetZoomFunc? = nil
+func getGetZoomFunc() throws -> GetZoomFunc {
+    if getZoomFunc == nil {
+        let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "CGSGetZoomParameters")
+        if fnSym == nil {
+            throw MWCError("Failed to find CGSGetZoomParameters function")
+        }
+        getZoomFunc = unsafeBitCast(fnSym, to: GetZoomFunc.self)
+    }
+    return getZoomFunc!
+}
+
+
+public func setZoom(_ factor: Double, center: CGPoint? = nil, smooth: Bool? = nil) throws {
+    var centerFinal: CGPoint
+    if center != nil {
+        // X, Y get floored, round first...
+        centerFinal = CGPoint(x: round(center!.x), y: round(center!.y))
+    } else {
+        let (_, _center, _) = try getZoom()
+        centerFinal = _center
+    }
     let _smooth = smooth != nil ? smooth : factor > 1
     // HACK: This private function doesn't play well with the built-in zoom feature.
     // We need to dirty the state (using inverted smooth value is sufficient) before
@@ -66,47 +99,37 @@ public func setZoom(_ factor: Double, cx: Double, cy: Double, smooth: Bool? = ni
     //  2. Accessibility shortcuts to affect zoom (i.e. ctrl + mouse scroll)
     //  3. setZoom(...args)  # ensure args are identical to step 1.
     // Expect no corruption on screen if it worked.
-    withUnsafePointer(to: &origin) { originPtr in
-        fn(cid, originPtr, factor, !_smooth!)
-    }
-    withUnsafePointer(to: &origin) { originPtr in
-        fn(cid, originPtr, factor, _smooth!)
+    let cid = try getCGSConnectionID()
+    let setZoomFn = try getSetZoomFunc()
+    withUnsafePointer(to: &centerFinal) {
+        setZoomFn(cid, $0, factor, !_smooth!)
+        setZoomFn(cid, $0, factor, _smooth!)
     }
 }
 
 
 public func getZoom() throws -> (Double, CGPoint, Bool) {
-    let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "CGSGetZoomParameters")
-    if fnSym == nil {
-        throw MWCError("Failed to find CGSGetZoomParameters function")
-    }
-    typealias Args = @convention(c) (
-        Int,
-        UnsafeMutablePointer<CGPoint>,
-        UnsafeMutablePointer<Double>,
-        UnsafeMutablePointer<Bool>
-    ) -> Void
-    let fn = unsafeBitCast(fnSym, to: Args.self)
     let cid = try getCGSConnectionID()
-    var origin = CGPoint.zero
+    let getZoomFn = try getGetZoomFunc()
+    var center = CGPoint.zero
     var factor: Double = 0.0
     var smooth: Bool = false
-    withUnsafeMutablePointer(to: &origin) { originPtr in
+    withUnsafeMutablePointer(to: &center) { centerPtr in
         withUnsafeMutablePointer(to: &factor) { factorPtr in
             withUnsafeMutablePointer(to: &smooth) { smoothPtr in
-                fn(cid, originPtr, factorPtr, smoothPtr)
+                getZoomFn(cid, centerPtr, factorPtr, smoothPtr)
             }
         }
     }
-    return (factor, origin, smooth)
+    return (factor, center, smooth)
 }
 
 
-public func getMainScreenSize() throws -> (Double, Double) {
+public func getMainScreenSize() throws -> CGSize {
     guard let screen = NSScreen.main else {
         throw MWCError("Main screen unavailable")
     }
-    return (screen.frame.width, screen.frame.height)
+    return CGSize(width: screen.frame.width, height: screen.frame.height)
 }
 
 
@@ -138,7 +161,7 @@ func getAppMainWindow(_ app: NSRunningApplication) throws -> AXUIElement {
 func getAXUIAttr<T>(_ window: AXUIElement, _ attr: String) throws -> T? {
     var _val: CFTypeRef?
     let res = AXUIElementCopyAttributeValue(window, attr as CFString, &_val)
-    if res == .noValue {
+    if res == .noValue || res == .attributeUnsupported {
         return nil
     }
     if res != .success {
@@ -247,17 +270,19 @@ public func getWindowApps(windows: Bool? = nil) throws -> [WindowApp] {
 }
 
 
-public func resizeAppWindow(_ appName: String, _ width: Double, _ height: Double,
-                            x: Double? = nil, y: Double? = nil, activate: Bool? = nil) throws {
+public func resizeAppWindow(_ appName: String, _ size: CGSize,
+                            position: CGPoint? = nil, activate: Bool? = nil) throws {
     let app = try getAppByName(appName)
     let window = try getAppMainWindow(app)
-    // X, Y get treated like floored Ints, round first...
-    var pos = CGPoint(x: CGFloat(round(x ?? 0)), y: CGFloat(round(y ?? 0)))
-    var size = CGSize(width: CGFloat(width), height: CGFloat(height))
-    try setWinAttrValue(window, kAXPositionAttribute, AXValueCreate(.cgPoint, &pos)!)
-    try setWinAttrValue(window, kAXSizeAttribute, AXValueCreate(.cgSize, &size)!)
+    // NOTE: Must do position first, side effects occur otherwise...
+    if position != nil {
+        // X, Y get treated like floored Ints, round first...
+        var posRounded = CGPoint(x: round(position!.x), y: round(position!.y))
+        try setWinAttrValue(window, kAXPositionAttribute, AXValueCreate(.cgPoint, &posRounded)!)
+    }
+    var _size = size
+    try setWinAttrValue(window, kAXSizeAttribute, AXValueCreate(.cgSize, &_size)!)
     if activate ?? false {
         app.activate()
     }
 }
-

@@ -46,9 +46,4 @@ export const getZoom = wrap(_mwc.getZoom);
 export const setZoom = wrap(_mwc.setZoom);
 export const getWindowApps = wrap(_mwc.getWindowApps);
 export const getAppWindowSize = wrap(_mwc.getAppWindowSize);
-
-
-const _resizeAppWindow = wrap(_mwc.resizeAppWindow);
-export function resizeAppWindow({x=0, y=0, activate=false, ...options}) {
-    return _resizeAppWindow({...options, x, y, activate});
-}
+export const resizeAppWindow = wrap(_mwc.resizeAppWindow);

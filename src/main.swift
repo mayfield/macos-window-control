@@ -1,40 +1,46 @@
 import Foundation
 
 
-func resizeCmd(_ appName: String, _ width: Double, _ height: Double, x: Double? = 0, y: Double? = 0) throws {
-    try resizeAppWindow(appName, width, height, x: x, y: y)
+func resizeCmd(_ appName: String, _ width: Double, _ height: Double,
+               x: Double? = nil, y: Double? = nil) throws {
+    let size = CGSize(width: width, height: height)
+    if x != nil, y != nil {
+        try resizeAppWindow(appName, size, position: CGPoint(x: CGFloat(x!), y: CGFloat(y!)))
+    } else {
+        try resizeAppWindow(appName, size)
+    }
 }
 
 
 func zoomCmd(_ factor: Double? = nil, cx: Double? = nil, cy: Double? = nil) throws {
     if factor == nil {
-        let (factor, origin, smooth) = try getZoom()
+        let (factor, center, smooth) = try getZoom()
         print("Zoom:", factor)
-        print("Origin:", origin)
+        print("Center:", center)
         print("Smooth:", smooth)
         return
     } else {
         if cx == nil || cy == nil {
-            try setZoom(factor!, cx: 0, cy: 0)
+            try setZoom(factor!)
         } else {
-            try setZoom(factor!, cx: cx!, cy: cy!)
+            try setZoom(factor!, center: CGPoint(x: cx!, y: cy!))
         }
     }
 }
 
 
 func fullscreenCmd(_ appName: String) throws {
-    let (sWidth, sHeight) = try getMainScreenSize()
+    let sSize = try getMainScreenSize()
     let menuHeight = try getMenuBarHeight()
     // HACK: I don't know of an API to get the real height.
     let estAppFrameHeight = 28.0
-    let scale = (sHeight - menuHeight - estAppFrameHeight) / sHeight
-    let adjWidth = sWidth * scale
-    let adjHeight = sHeight - menuHeight
+    let scale = (sSize.height - menuHeight - estAppFrameHeight) / sSize.height
+    let adjWidth = sSize.width * scale
+    let adjHeight = sSize.height - menuHeight
     print("Resizing:", adjWidth, adjHeight, 0, menuHeight)
     try resizeCmd(appName, adjWidth, adjHeight, x: 0, y: menuHeight)
-    print("Zooming:", 1 / scale, 0, sHeight)
-    try zoomCmd(1 / scale, cx: 0, cy: sHeight)
+    print("Zooming:", 1 / scale, 0, sSize.height)
+    try zoomCmd(1 / scale, cx: 0, cy: sSize.height)
 }
 
 

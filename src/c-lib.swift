@@ -89,8 +89,7 @@ func wrapCall(_ fnClosure: () throws -> Encodable?, _ outPtr: UnsafeMutablePoint
 @_cdecl("mwc_getMainScreenSize")
 public func mwc_getMainScreenSize(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
     return wrapCall({
-        let (width, height) = try getMainScreenSize()
-        return ["width": width, "height": height]
+        return try getMainScreenSize()
     }, outPtr, outSize)
 }
 
@@ -121,10 +120,8 @@ public func mwc_getAppWindowSize(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CI
         let args: Args = try objDecode(argsPtr, size: argsSize)
         let rect = try getAppWindowSize(args.appName)
         return [
-            "width": rect.size.width,
-            "height": rect.size.height,
-            "x": rect.origin.x,
-            "y": rect.origin.y,
+            "size": [rect.size.width, rect.size.height],
+            "position": [rect.origin.x, rect.origin.y],
         ]
     }, outPtr, outSize)
 }
@@ -136,14 +133,12 @@ public func mwc_resizeAppWindow(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CIn
     return wrapCall({
         struct Args: Decodable {
             let appName: String
-            let width: Double
-            let height: Double
-            let x: Double?
-            let y: Double?
+            let size: CGSize
+            let position: CGPoint?
             let activate: Bool?
         }
         let args: Args = try objDecode(argsPtr, size: argsSize)
-        try resizeAppWindow(args.appName, args.width, args.height, x: args.x, y: args.y, activate: args.activate)
+        try resizeAppWindow(args.appName, args.size, position: args.position, activate: args.activate)
         return nil
     }, outPtr, outSize)
 }
@@ -169,12 +164,11 @@ public func mwc_setZoom(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
     return wrapCall({
         struct Args: Decodable {
             let factor: Double
-            let cx: Double
-            let cy: Double
+            let center: CGPoint?
             let smooth: Bool?
         }
         let args: Args = try objDecode(argsPtr, size: argsSize)
-        try setZoom(args.factor, cx: args.cx, cy: args.cy, smooth: args.smooth)
+        try setZoom(args.factor, center: args.center, smooth: args.smooth)
         return nil
     }, outPtr, outSize)
 }
