@@ -14,8 +14,11 @@
 // be considered an internal error.
 int mwc_getMainScreenSize(char*, int);
 int mwc_getMenuBarHeight(char*, int);
+int mwc_getWindowApps(char*, int);
+int mwc_getAppWindowSize(char*, int, char*, int);
 int mwc_resizeAppWindow(char*, int, char*, int);
 int mwc_getZoom(char*, int);
+int mwc_setZoom(char*, int, char*, int);
 
 
 // Basically everything in node_api uses this error handling conv...
@@ -59,7 +62,7 @@ static napi_value swiftCall(napi_env env, napi_callback_info info, int (*fptr)(c
     napi_value args[1];
     NAPI_CALL(env, napi_get_cb_info(env, info, &argc, args, NULL, NULL));
     if (argc != 1) {
-        napi_throw_error(env, NULL, "1 argument required");
+        napi_throw_type_error(env, NULL, "1 argument required");
         return NULL;
     }
     size_t json_len_nonull;
@@ -118,6 +121,16 @@ static napi_value getMenuBarHeight(napi_env env, napi_callback_info info) {
 }
 
 
+static napi_value getWindowApps(napi_env env, napi_callback_info info) {
+    return swiftCallNoArgs(env, mwc_getWindowApps);
+}
+
+
+static napi_value getAppWindowSize(napi_env env, napi_callback_info info) {
+    return swiftCall(env, info, mwc_getAppWindowSize);
+}
+
+
 static napi_value resizeAppWindow(napi_env env, napi_callback_info info) {
     return swiftCall(env, info, mwc_resizeAppWindow);
 }
@@ -128,25 +141,26 @@ static napi_value getZoom(napi_env env, napi_callback_info info) {
 }
 
 
+static napi_value setZoom(napi_env env, napi_callback_info info) {
+    return swiftCall(env, info, mwc_setZoom);
+}
+
+
+
 static napi_value Init(napi_env env, napi_value exports) {
-    napi_property_descriptor props[] = {{
-        .utf8name = "getMainScreenSize",
-        .method = getMainScreenSize,
-        .attributes = napi_default
-    }, {
-        .utf8name = "getMenuBarHeight",
-        .method = getMenuBarHeight,
-        .attributes = napi_default
-    }, {
-        .utf8name = "resizeAppWindow",
-        .method = resizeAppWindow,
-        .attributes = napi_default
-    }, {
-        .utf8name = "getZoom",
-        .method = getZoom,
-        .attributes = napi_default
-    }};
-    NAPI_CALL(env, napi_define_properties(env, exports, sizeof(props) / sizeof(props[0]), props));
+#   define ADD_FUNC(fn) \
+        do { \
+            napi_value jsFunc; \
+            napi_create_function(env, (#fn), NAPI_AUTO_LENGTH, (fn), NULL, &jsFunc); \
+            napi_set_named_property(env, exports, (#fn), jsFunc); \
+        } while (0)
+    ADD_FUNC(getMainScreenSize);
+    ADD_FUNC(getMenuBarHeight);
+    ADD_FUNC(getWindowApps);
+    ADD_FUNC(getAppWindowSize);
+    ADD_FUNC(resizeAppWindow);
+    ADD_FUNC(getZoom);
+    ADD_FUNC(setZoom);
     return exports;
 }
 

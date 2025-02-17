@@ -89,8 +89,8 @@ func wrapCall(_ fnClosure: () throws -> Encodable?, _ outPtr: UnsafeMutablePoint
 @_cdecl("mwc_getMainScreenSize")
 public func mwc_getMainScreenSize(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
     return wrapCall({
-        let (x, y) = try getMainScreenSize()
-        return ["x": x, "y": y]
+        let (width, height) = try getMainScreenSize()
+        return ["width": width, "height": height]
     }, outPtr, outSize)
 }
 
@@ -99,6 +99,33 @@ public func mwc_getMainScreenSize(_ outPtr: UnsafeMutablePointer<CChar>, _ outSi
 public func mwc_getMenuBarHeight(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
     return wrapCall({
         return try getMenuBarHeight()
+    }, outPtr, outSize)
+}
+
+
+@_cdecl("mwc_getWindowApps")
+public func mwc_getWindowApps(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+    return wrapCall({
+        return try getWindowApps()
+    }, outPtr, outSize)
+}
+
+
+@_cdecl("mwc_getAppWindowSize")
+public func mwc_getAppWindowSize(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
+                                 _ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+    return wrapCall({
+        struct Args: Decodable {
+            let appName: String
+        }
+        let args: Args = try objDecode(argsPtr, size: argsSize)
+        let rect = try getAppWindowSize(args.appName)
+        return [
+            "width": rect.size.width,
+            "height": rect.size.height,
+            "x": rect.origin.x,
+            "y": rect.origin.y,
+        ]
     }, outPtr, outSize)
 }
 
@@ -132,5 +159,22 @@ public func mwc_getZoom(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) 
             let center: [String: Double]
         }
         return Resp(factor: factor, smooth: smooth, center: ["x": center.x, "y": center.y])
+    }, outPtr, outSize)
+}
+
+
+@_cdecl("mwc_setZoom")
+public func mwc_setZoom(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
+                        _ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+    return wrapCall({
+        struct Args: Decodable {
+            let factor: Double
+            let cx: Double
+            let cy: Double
+            let smooth: Bool?
+        }
+        let args: Args = try objDecode(argsPtr, size: argsSize)
+        try setZoom(args.factor, cx: args.cx, cy: args.cy, smooth: args.smooth)
+        return nil
     }, outPtr, outSize)
 }

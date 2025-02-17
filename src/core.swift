@@ -19,6 +19,21 @@ class PermError: MWCError { }
 class NotFoundError: MWCError { }
 
 
+public struct WindowApp: Encodable {
+    struct Window: Encodable {
+        var title: String = ""
+        var focused: Bool = false
+        var minimized: Bool = false
+        var size: CGSize = CGSize.zero
+        var position: CGPoint = CGPoint.zero
+    }
+
+    var name: String
+    var pid: Int
+    var windows: [Window]
+}
+
+
 func getCGSConnectionID() throws -> Int {
     if coreGraphicsConnId == nil {
         let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "CGSMainConnectionID")
@@ -105,14 +120,13 @@ public func getMenuBarHeight() throws -> Double {
 
 func getAppMainWindow(_ app: NSRunningApplication) throws -> AXUIElement {
     let appElement = AXUIElementCreateApplication(app.processIdentifier)
-    var mainWindow: AnyObject?
-    var axRes: AXError
-    axRes = AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindow)
-    if axRes != .success {
-        if (axRes == AXError.apiDisabled) {
+    var mainWindow: CFTypeRef?
+    let res = AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindow)
+    if res != .success {
+        if (res == .apiDisabled) {
             throw PermError("Enable this tool in System Settings -> Privacy and Security -> Accessibility")
         }
-        throw MWCError("Failed to get main window: \(axRes.rawValue)")
+        throw MWCError("Failed to get main window: \(String(describing: res))")
     }
     guard let window = mainWindow as! AXUIElement? else {
         throw MWCError("Unexpected unwrap error")
@@ -121,13 +135,16 @@ func getAppMainWindow(_ app: NSRunningApplication) throws -> AXUIElement {
 }
 
 
-func getWinAttrValue(_ window: AXUIElement, _ attr: String) throws -> AnyObject {
-    var _val: AnyObject?
+func getAXUIAttr<T>(_ window: AXUIElement, _ attr: String) throws -> T? {
+    var _val: CFTypeRef?
     let res = AXUIElementCopyAttributeValue(window, attr as CFString, &_val)
-    if res != .success {
-        throw MWCError("Failed to get window attr [\(attr)]: \(res.rawValue)")
+    if res == .noValue {
+        return nil
     }
-    if let val = _val {
+    if res != .success {
+        throw MWCError("Failed to get window attr [\(attr)]: \(String(describing: res))")
+    }
+    if let val = _val as? T {
         return val
     } else {
         throw MWCError("Window attr [\(attr)] is NULL")
@@ -135,7 +152,7 @@ func getWinAttrValue(_ window: AXUIElement, _ attr: String) throws -> AnyObject 
 }
 
 
-func setWinAttrValue(_ window: AXUIElement, _ attr: String, _ value: AnyObject) throws {
+func setWinAttrValue(_ window: AXUIElement, _ attr: String, _ value: CFTypeRef) throws {
     let res = AXUIElementSetAttributeValue(window, attr as CFString, value)
     if res != .success {
         throw MWCError("Failed to set window attr [\(attr)]: \(res.rawValue)")
@@ -143,9 +160,28 @@ func setWinAttrValue(_ window: AXUIElement, _ attr: String, _ value: AnyObject) 
 }
 
 
+func getAXUIAttrs(_ element: AXUIElement) throws -> [String] {
+    var _attrs: CFArray?
+    let res = AXUIElementCopyAttributeNames(element, &_attrs)
+    if res != .success {
+        // NOTE: .apiDisabled does not always mean perm error, some apps block us
+        // and this is the response.
+        if res == .cannotComplete || res == .notImplemented || res == .apiDisabled {
+            return []
+        }
+        throw MWCError("Failed to get element attrs: \(String(describing: res))")
+    }
+    if let attrs = _attrs as? [String] {
+        return attrs
+    } else {
+        throw MWCError("Element attrs is NULL")
+    }
+}
+
+
 func getAppByName(_ name: String) throws -> NSRunningApplication {
-    let runningApps = NSWorkspace.shared.runningApplications
-    guard let app = runningApps.first(where: {$0.localizedName == name}) else {
+    let apps = NSWorkspace.shared.runningApplications
+    guard let app = apps.first(where: {$0.localizedName == name}) else {
         throw NotFoundError("App not found")
     }
     return app
@@ -155,14 +191,59 @@ func getAppByName(_ name: String) throws -> NSRunningApplication {
 public func getAppWindowSize(_ appName: String) throws -> CGRect {
     let app = try getAppByName(appName)
     let window = try getAppMainWindow(app)
-    let _pos = try getWinAttrValue(window, kAXPositionAttribute)
-    let _size = try getWinAttrValue(window, kAXSizeAttribute)
     var rect = CGRect.zero
-    if !AXValueGetValue(_pos as! AXValue, .cgPoint, &rect.origin) ||
-       !AXValueGetValue(_size as! AXValue, .cgSize, &rect.size) {
-        throw MWCError("Invalid window info")
+    if let pos: AXValue = try getAXUIAttr(window, kAXPositionAttribute),
+       let size: AXValue = try getAXUIAttr(window, kAXSizeAttribute) {
+        if !AXValueGetValue(pos, .cgPoint, &rect.origin) ||
+           !AXValueGetValue(size, .cgSize, &rect.size) {
+            throw MWCError("Invalid window info")
+        }
     }
     return rect
+}
+
+
+public func getWindowApps(windows: Bool? = nil) throws -> [WindowApp] {
+    let apps = NSWorkspace.shared.runningApplications
+    var winApps: [WindowApp] = []
+    for app in apps {
+        let appEl = AXUIElementCreateApplication(app.processIdentifier)
+        let appAttrs = try getAXUIAttrs(appEl)
+        if !appAttrs.contains(kAXWindowsAttribute) {
+            continue
+        }
+        guard let _windows: [AXUIElement] = try getAXUIAttr(appEl, kAXWindowsAttribute) else {
+            continue
+        }
+        if _windows.count == 0 {
+            continue
+        }
+        var windows: [WindowApp.Window] = []
+        for win in _windows {
+            var window = WindowApp.Window()
+            do {
+                window.title = try getAXUIAttr(win, kAXTitleAttribute) ?? ""
+                window.focused = try getAXUIAttr(win, kAXFocusedAttribute) ?? false
+                window.minimized = try getAXUIAttr(win, kAXMinimizedAttribute) ?? false
+                if let _position: AXValue = try getAXUIAttr(win, kAXPositionAttribute) {
+                    AXValueGetValue(_position, .cgPoint, &window.position)
+                }
+                if let _size: AXValue = try getAXUIAttr(win, kAXSizeAttribute) {
+                    AXValueGetValue(_size, .cgSize, &window.size)
+                }
+            } catch let e as MWCError {
+                print("Unexpected window attribute error:", e, e.message)
+                continue
+            }
+            windows.append(window)
+        }
+        winApps.append(WindowApp(
+            name: app.localizedName ?? "",
+            pid: Int(app.processIdentifier),
+            windows: windows
+        ))
+    }
+    return winApps
 }
 
 
@@ -179,3 +260,4 @@ public func resizeAppWindow(_ appName: String, _ width: Double, _ height: Double
         app.activate()
     }
 }
+

@@ -1,5 +1,5 @@
 import * as bindings from 'bindings';
-const _mwc = bindings.default('mwc');
+export const _mwc = bindings.default('mwc');
 
 
 export class MWCError extends Error {
@@ -18,39 +18,37 @@ const typedErrors = {
 };
 
 
-function wrap(fn, arg) {
-    const rawResp = arg ? fn(JSON.stringify(arg)) : fn();
-    const resp = JSON.parse(rawResp);
-    if (resp.success) {
-        return resp.value;
-    } else if (!resp.success) {
-        const E = typedErrors[resp.error.type];
-        if (E) {
-            throw new E(resp.error.message);
+function wrap(fn) {
+    const wrapped = function(arg) {
+        const rawResp = arg ? fn(JSON.stringify(arg)) : fn();
+        const resp = JSON.parse(rawResp);
+        if (resp.success) {
+            return resp.value;
+        } else if (!resp.success) {
+            const E = typedErrors[resp.error.type];
+            if (E) {
+                throw new E(resp.error.message);
+            } else {
+                throw new MWCError(`${resp.error.type}: ${resp.error.message}`);
+            }
         } else {
-            throw new MWCError(`${resp.error.type}: ${resp.error.message}`);
+            throw new Error('Internal Swift Bridge Protocol Error');
         }
-    } else {
-        throw new Error('Internal Swift Bridge Protocol Error');
-    }
+    };
+    Object.defineProperty(wrapped, 'name', {value: fn.name});
+    return wrapped;
 }
 
 
-export function getMainScreenSize() {
-    return wrap(_mwc.getMainScreenSize);
-}
+export const getMainScreenSize = wrap(_mwc.getMainScreenSize);
+export const getMenuBarHeight = wrap(_mwc.getMenuBarHeight);
+export const getZoom = wrap(_mwc.getZoom);
+export const setZoom = wrap(_mwc.setZoom);
+export const getWindowApps = wrap(_mwc.getWindowApps);
+export const getAppWindowSize = wrap(_mwc.getAppWindowSize);
 
 
-export function getMenuBarHeight() {
-    return wrap(_mwc.getMenuBarHeight);
-}
-
-
-export function resizeAppWindow({appName, width, height, x=0, y=0, activate=false}) {
-    return wrap(_mwc.resizeAppWindow, {appName, width, height, x, y, activate});
-}
-
-
-export function getZoom() {
-    return wrap(_mwc.getZoom);
+const _resizeAppWindow = wrap(_mwc.resizeAppWindow);
+export function resizeAppWindow({x=0, y=0, activate=false, ...options}) {
+    return _resizeAppWindow({...options, x, y, activate});
 }
