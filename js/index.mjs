@@ -7,13 +7,13 @@ export class MWCError extends Error {
         return this.constructor.name;
     }
 }
+export class AXPermError extends MWCError {}
 export class NotFoundError extends MWCError {}
-export class PermError extends MWCError {}
 export class DecodingError extends MWCError {}
 
 const typedErrors = {
+    AXPermError,
     NotFoundError,
-    PermError,
     DecodingError,
 };
 
@@ -40,6 +40,7 @@ function wrap(fn) {
 }
 
 
+export const hasAccessibilityPermission = wrap(_mwc.hasAccessibilityPermission);
 export const getMainScreenSize = wrap(_mwc.getMainScreenSize);
 export const getMenuBarHeight = wrap(_mwc.getMenuBarHeight);
 export const getZoom = wrap(_mwc.getZoom);

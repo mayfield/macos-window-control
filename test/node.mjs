@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert';
 import * as mwc from '../js/index.mjs';
 
+test('hasAccessiblityPermission', () => {
+    assert(mwc.hasAccessibilityPermission());
+});
 
 test('getZoom', () => {
     const r = mwc.getZoom();
@@ -110,19 +113,21 @@ test('getWindowApps', () => {
 });
 
 test('spiral', async () => {
-    mwc.setZoom({factor: 1});
     const [width, height] = mwc.getMainScreenSize();
-    const centerX = width / 2;
-    const centerY = height / 2;
     const circleSize = (Math.min(width, height) / 2) * 0.5;
-    const targetInterval = (1000 / 60) - 1;
+    const fps = 60;
+    const zoomTime = 0.5;
+    const cycles = 1;
+    const targetInterval = (1000 / fps) - 1;
+    const framesPerCycle = fps * zoomTime;
+    mwc.setZoom({factor: 1});
     try {
-        for (let i = 0; i < 1000; i++) {
-            const factor = 2 - Math.cos(i / 40);
+        for (let i = 0; i < framesPerCycle * Math.PI * 2 * cycles; i++) {
+            const factor = 2 - Math.cos(i / framesPerCycle);
             const radius = (circleSize / factor) * (factor - 1);
             const center = [
-                centerX + Math.cos(i / 8) * radius,
-                centerY + Math.sin(i / 8) * radius
+                (width / 2) + Math.cos(i / (framesPerCycle / 5)) * radius,
+                (height / 2) + Math.sin(i / (framesPerCycle / 5)) * radius
             ];
             mwc.setZoom({factor, center});
             await new Promise(r => setTimeout(r, targetInterval));

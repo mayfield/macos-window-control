@@ -12,6 +12,7 @@
 // were copied into the return buffer or < 0 on error.  If the retJson
 // buffer is insufficiently sized it will be clipped and this should
 // be considered an internal error.
+int mwc_hasAccessibilityPermission(char*, int);
 int mwc_getMainScreenSize(char*, int);
 int mwc_getMenuBarHeight(char*, int);
 int mwc_getWindowApps(char*, int);
@@ -111,6 +112,11 @@ cleanup:
 }
 
 
+static napi_value hasAccessibilityPermission(napi_env env, napi_callback_info info) {
+    return swiftCallNoArgs(env, mwc_hasAccessibilityPermission);
+}
+
+
 static napi_value getMainScreenSize(napi_env env, napi_callback_info info) {
     return swiftCallNoArgs(env, mwc_getMainScreenSize);
 }
@@ -154,6 +160,7 @@ static napi_value Init(napi_env env, napi_value exports) {
             napi_create_function(env, (#fn), NAPI_AUTO_LENGTH, (fn), NULL, &jsFunc); \
             napi_set_named_property(env, exports, (#fn), jsFunc); \
         } while (0)
+    ADD_FUNC(hasAccessibilityPermission);
     ADD_FUNC(getMainScreenSize);
     ADD_FUNC(getMenuBarHeight);
     ADD_FUNC(getWindowApps);

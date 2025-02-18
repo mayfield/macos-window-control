@@ -20,7 +20,11 @@ class MWCError: Error {
 }
 
 
-class PermError: MWCError { }
+class AXPermError: MWCError {
+    init() {
+        super.init("Permission required: System Settings -> Privacy and Security -> Accessibility")
+    }
+}
 
 
 class NotFoundError: MWCError { }
@@ -125,39 +129,6 @@ public func getZoom() throws -> (Double, CGPoint, Bool) {
 }
 
 
-public func getMainScreenSize() throws -> CGSize {
-    guard let screen = NSScreen.main else {
-        throw MWCError("Main screen unavailable")
-    }
-    return CGSize(width: screen.frame.width, height: screen.frame.height)
-}
-
-
-public func getMenuBarHeight() throws -> Double {
-    guard let screen = NSScreen.main else {
-        throw MWCError("Main screen unavailable")
-    }
-    return screen.frame.height - screen.visibleFrame.height
-}
-
-
-func getAppMainWindow(_ app: NSRunningApplication) throws -> AXUIElement {
-    let appElement = AXUIElementCreateApplication(app.processIdentifier)
-    var mainWindow: CFTypeRef?
-    let res = AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindow)
-    if res != .success {
-        if (res == .apiDisabled) {
-            throw PermError("Enable this tool in System Settings -> Privacy and Security -> Accessibility")
-        }
-        throw MWCError("Failed to get main window: \(String(describing: res))")
-    }
-    guard let window = mainWindow as! AXUIElement? else {
-        throw MWCError("Unexpected unwrap error")
-    }
-    return window
-}
-
-
 func getAXUIAttr<T>(_ window: AXUIElement, _ attr: String) throws -> T? {
     var _val: CFTypeRef?
     let res = AXUIElementCopyAttributeValue(window, attr as CFString, &_val)
@@ -171,14 +142,6 @@ func getAXUIAttr<T>(_ window: AXUIElement, _ attr: String) throws -> T? {
         return val
     } else {
         throw MWCError("Window attr [\(attr)] is NULL")
-    }
-}
-
-
-func setWinAttrValue(_ window: AXUIElement, _ attr: String, _ value: CFTypeRef) throws {
-    let res = AXUIElementSetAttributeValue(window, attr as CFString, value)
-    if res != .success {
-        throw MWCError("Failed to set window attr [\(attr)]: \(res.rawValue)")
     }
 }
 
@@ -202,6 +165,23 @@ func getAXUIAttrs(_ element: AXUIElement) throws -> [String] {
 }
 
 
+func setWinAttrValue(_ window: AXUIElement, _ attr: String, _ value: CFTypeRef) throws {
+    let res = AXUIElementSetAttributeValue(window, attr as CFString, value)
+    if res != .success {
+        throw MWCError("Failed to set window attr [\(attr)]: \(res.rawValue)")
+    }
+}
+
+
+func getAppMainWindow(_ app: NSRunningApplication) throws -> AXUIElement {
+    let appElement = AXUIElementCreateApplication(app.processIdentifier)
+    guard let window: AXUIElement = try getAXUIAttr(appElement, kAXMainWindowAttribute) else {
+        throw NotFoundError("Failed to get main window")
+    }
+    return window
+}
+
+
 func getAppByName(_ name: String) throws -> NSRunningApplication {
     let apps = NSWorkspace.shared.runningApplications
     guard let app = apps.first(where: {$0.localizedName == name}) else {
@@ -211,7 +191,31 @@ func getAppByName(_ name: String) throws -> NSRunningApplication {
 }
 
 
+public func hasAccessibilityPermission() -> Bool {
+    return AXIsProcessTrusted()
+}
+
+
+public func getMainScreenSize() throws -> CGSize {
+    guard let screen = NSScreen.main else {
+        throw MWCError("Main screen unavailable")
+    }
+    return CGSize(width: screen.frame.width, height: screen.frame.height)
+}
+
+
+public func getMenuBarHeight() throws -> Double {
+    guard let screen = NSScreen.main else {
+        throw MWCError("Main screen unavailable")
+    }
+    return screen.frame.height - screen.visibleFrame.height
+}
+
+
 public func getAppWindowSize(_ appName: String) throws -> CGRect {
+    if !hasAccessibilityPermission() {
+        throw AXPermError()
+    }
     let app = try getAppByName(appName)
     let window = try getAppMainWindow(app)
     var rect = CGRect.zero
@@ -227,17 +231,26 @@ public func getAppWindowSize(_ appName: String) throws -> CGRect {
 
 
 public func getWindowApps(windows: Bool? = nil) throws -> [WindowApp] {
+    if !hasAccessibilityPermission() {
+        throw AXPermError()
+    }
     let apps = NSWorkspace.shared.runningApplications
     var winApps: [WindowApp] = []
+    let start = CFAbsoluteTimeGetCurrent()
+    print(CFAbsoluteTimeGetCurrent() - start, "start")
     for app in apps {
         let appEl = AXUIElementCreateApplication(app.processIdentifier)
+        print(start - CFAbsoluteTimeGetCurrent(), "gotapp")
         let appAttrs = try getAXUIAttrs(appEl)
+        print(start - CFAbsoluteTimeGetCurrent(), "got ALL app attrs")
         if !appAttrs.contains(kAXWindowsAttribute) {
             continue
         }
         guard let _windows: [AXUIElement] = try getAXUIAttr(appEl, kAXWindowsAttribute) else {
+            print(start - CFAbsoluteTimeGetCurrent(), "got ALL app window (NONE)")
             continue
         }
+        print(start - CFAbsoluteTimeGetCurrent(), "got ALL app window", _windows.count)
         if _windows.count == 0 {
             continue
         }
@@ -259,6 +272,7 @@ public func getWindowApps(windows: Bool? = nil) throws -> [WindowApp] {
                 continue
             }
             windows.append(window)
+            print(start - CFAbsoluteTimeGetCurrent(), "parsed a window")
         }
         winApps.append(WindowApp(
             name: app.localizedName ?? "",
@@ -266,12 +280,16 @@ public func getWindowApps(windows: Bool? = nil) throws -> [WindowApp] {
             windows: windows
         ))
     }
+    print(start - CFAbsoluteTimeGetCurrent(), "done")
     return winApps
 }
 
 
 public func resizeAppWindow(_ appName: String, _ size: CGSize,
                             position: CGPoint? = nil, activate: Bool? = nil) throws {
+    if !hasAccessibilityPermission() {
+        throw AXPermError()
+    }
     let app = try getAppByName(appName)
     let window = try getAppMainWindow(app)
     // NOTE: Must do position first, side effects occur otherwise...

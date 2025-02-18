@@ -86,6 +86,14 @@ func wrapCall(_ fnClosure: () throws -> Encodable?, _ outPtr: UnsafeMutablePoint
 }
 
 
+@_cdecl("mwc_hasAccessibilityPermission")
+public func mwc_hasAccessibilityPermission(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+    return wrapCall({
+        return hasAccessibilityPermission()
+    }, outPtr, outSize)
+}
+
+
 @_cdecl("mwc_getMainScreenSize")
 public func mwc_getMainScreenSize(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
     return wrapCall({
