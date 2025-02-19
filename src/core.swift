@@ -11,8 +11,15 @@ typealias GetZoomFunc = @convention(c) (
 ) -> Void
 
 
+// AX API can be insanely slow, exclude known time sinks that do nothing for us...
+let ignoredBundleIds = [
+    "com.apple.WebKit.WebContent",
+]
+
+
 class MWCError: Error {
     var message: String
+    var stack: [String] = Thread.callStackSymbols
 
     init(_ message: String) {
         self.message = message
@@ -41,48 +48,54 @@ public struct WindowApp: Encodable {
 
     var name: String
     var pid: Int
+    var active: Bool
+    var hidden: Bool
+    var bundleIdent: String?
+    var bundleURL: String?
+    var execURL: String?
+    var launchDate: String?
     var windows: [Window]
 }
 
 
-var coreGraphicsConnId: Int? = nil
+var _coreGraphicsConnId: Int? = nil
 func getCGSConnectionID() throws -> Int {
-    if coreGraphicsConnId == nil {
+    if _coreGraphicsConnId == nil {
         let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "CGSMainConnectionID")
         if fnSym == nil {
             throw MWCError("Failed to find CGSMainConnectionID function")
         }
         typealias Args = @convention(c) (UnsafeRawPointer?) -> Int
         let fn = unsafeBitCast(fnSym, to: Args.self)
-        coreGraphicsConnId = fn(nil)
+        _coreGraphicsConnId = fn(nil)
     }
-    return coreGraphicsConnId!
+    return _coreGraphicsConnId!
 }
 
 
-var setZoomFunc: SetZoomFunc? = nil
+var _setZoomFunc: SetZoomFunc? = nil
 func getSetZoomFunc() throws -> SetZoomFunc {
-    if setZoomFunc == nil {
+    if _setZoomFunc == nil {
         let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "CGSSetZoomParameters")
         if fnSym == nil {
             throw MWCError("Failed to find CGSSetZoomParameters function")
         }
-        setZoomFunc = unsafeBitCast(fnSym, to: SetZoomFunc.self)
+        _setZoomFunc = unsafeBitCast(fnSym, to: SetZoomFunc.self)
     }
-    return setZoomFunc!
+    return _setZoomFunc!
 }
 
 
-var getZoomFunc: GetZoomFunc? = nil
+var _getZoomFunc: GetZoomFunc? = nil
 func getGetZoomFunc() throws -> GetZoomFunc {
-    if getZoomFunc == nil {
+    if _getZoomFunc == nil {
         let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "CGSGetZoomParameters")
         if fnSym == nil {
             throw MWCError("Failed to find CGSGetZoomParameters function")
         }
-        getZoomFunc = unsafeBitCast(fnSym, to: GetZoomFunc.self)
+        _getZoomFunc = unsafeBitCast(fnSym, to: GetZoomFunc.self)
     }
-    return getZoomFunc!
+    return _getZoomFunc!
 }
 
 
@@ -129,53 +142,101 @@ public func getZoom() throws -> (Double, CGPoint, Bool) {
 }
 
 
-func getAXUIAttr<T>(_ window: AXUIElement, _ attr: String) throws -> T? {
+var _isoDateFmt: ISO8601DateFormatter? = nil
+func toISODateTime(_ date: Date) -> String {
+    if _isoDateFmt == nil {
+        _isoDateFmt = ISO8601DateFormatter()
+        _isoDateFmt!.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    }
+    return _isoDateFmt!.string(from: date)
+}
+
+
+func getAXUIAttrSafe<T>(_ element: AXUIElement, _ attr: String) throws -> T? {
     var _val: CFTypeRef?
-    let res = AXUIElementCopyAttributeValue(window, attr as CFString, &_val)
-    if res == .noValue || res == .attributeUnsupported {
+    let res = AXUIElementCopyAttributeValue(element, attr as CFString, &_val)
+    if res != .success || _val == nil {
         return nil
     }
-    if res != .success {
-        throw MWCError("Failed to get window attr [\(attr)]: \(String(describing: res))")
+    guard let val = _val as? T else {
+        throw MWCError("Invalid type for attr [\(attr)]: \(T.self) != \(String(describing: _val!))")
     }
-    if let val = _val as? T {
-        return val
-    } else {
-        throw MWCError("Window attr [\(attr)] is NULL")
+    return val
+}
+
+
+func getAXUIAttr<T>(_ element: AXUIElement, _ attr: String) -> T? {
+    do {
+        return try getAXUIAttrSafe(element, attr)
+    } catch let e as MWCError {
+        print("Internal type error:", e.message)
+        return nil
+    } catch {
+        return nil
     }
 }
 
 
-func getAXUIAttrs(_ element: AXUIElement) throws -> [String] {
+func hasAXUIAttr(_ element: AXUIElement, _ attr: String) -> Bool {
+    var count: CFIndex = 0
+    let res = AXUIElementGetAttributeValueCount(element, attr as CFString, &count)
+    if res != .success {
+        return false
+    }
+    return count > 0
+}
+
+
+func listAXUIAttrs(_ element: AXUIElement) -> [String] {
     var _attrs: CFArray?
     let res = AXUIElementCopyAttributeNames(element, &_attrs)
-    if res != .success {
-        // NOTE: .apiDisabled does not always mean perm error, some apps block us
-        // and this is the response.
-        if res == .cannotComplete || res == .notImplemented || res == .apiDisabled {
-            return []
-        }
-        throw MWCError("Failed to get element attrs: \(String(describing: res))")
+    if res != .success || _attrs == nil {
+        return []
     }
-    if let attrs = _attrs as? [String] {
-        return attrs
-    } else {
-        throw MWCError("Element attrs is NULL")
+    guard let attrs = _attrs as? [String] else {
+        return []
     }
+    return attrs
 }
 
 
-func setWinAttrValue(_ window: AXUIElement, _ attr: String, _ value: CFTypeRef) throws {
-    let res = AXUIElementSetAttributeValue(window, attr as CFString, value)
+func listAXUIActions(_ element: AXUIElement) -> [String] {
+    var _actions: CFArray?
+    let res = AXUIElementCopyActionNames(element, &_actions)
     if res != .success {
-        throw MWCError("Failed to set window attr [\(attr)]: \(res.rawValue)")
+        return []
+    }
+    guard let actions = _actions as? [String] else {
+        return []
+    }
+    return actions
+}
+
+
+func listAXUIParamAttrs(_ element: AXUIElement) -> [String] {
+    var _attrs: CFArray?
+    let res = AXUIElementCopyParameterizedAttributeNames(element, &_attrs)
+    if res != .success {
+        return []
+    }
+    guard let attrs = _attrs as? [String] else {
+        return []
+    }
+    return attrs
+}
+
+
+func setAXUIAttr(_ el: AXUIElement, _ attr: String, _ value: CFTypeRef) throws {
+    let res = AXUIElementSetAttributeValue(el, attr as CFString, value)
+    if res != .success {
+        throw MWCError("Failed to set attr [\(attr)]: \(res.rawValue)")
     }
 }
 
 
 func getAppMainWindow(_ app: NSRunningApplication) throws -> AXUIElement {
     let appElement = AXUIElementCreateApplication(app.processIdentifier)
-    guard let window: AXUIElement = try getAXUIAttr(appElement, kAXMainWindowAttribute) else {
+    guard let window: AXUIElement = try getAXUIAttrSafe(appElement, kAXMainWindowAttribute) else {
         throw NotFoundError("Failed to get main window")
     }
     return window
@@ -219,8 +280,8 @@ public func getAppWindowSize(_ appName: String) throws -> CGRect {
     let app = try getAppByName(appName)
     let window = try getAppMainWindow(app)
     var rect = CGRect.zero
-    if let pos: AXValue = try getAXUIAttr(window, kAXPositionAttribute),
-       let size: AXValue = try getAXUIAttr(window, kAXSizeAttribute) {
+    if let pos: AXValue = try getAXUIAttrSafe(window, kAXPositionAttribute),
+       let size: AXValue = try getAXUIAttrSafe(window, kAXSizeAttribute) {
         if !AXValueGetValue(pos, .cgPoint, &rect.origin) ||
            !AXValueGetValue(size, .cgSize, &rect.size) {
             throw MWCError("Invalid window info")
@@ -234,53 +295,51 @@ public func getWindowApps(windows: Bool? = nil) throws -> [WindowApp] {
     if !hasAccessibilityPermission() {
         throw AXPermError()
     }
-    let apps = NSWorkspace.shared.runningApplications
+    let apps = NSWorkspace.shared.runningApplications.filter {
+        return $0.isFinishedLaunching && !ignoredBundleIds.contains($0.bundleIdentifier ?? "")
+    }
     var winApps: [WindowApp] = []
-    let start = CFAbsoluteTimeGetCurrent()
-    print(CFAbsoluteTimeGetCurrent() - start, "start")
+    let queue = OperationQueue()
     for app in apps {
-        let appEl = AXUIElementCreateApplication(app.processIdentifier)
-        print(start - CFAbsoluteTimeGetCurrent(), "gotapp")
-        let appAttrs = try getAXUIAttrs(appEl)
-        print(start - CFAbsoluteTimeGetCurrent(), "got ALL app attrs")
-        if !appAttrs.contains(kAXWindowsAttribute) {
-            continue
-        }
-        guard let _windows: [AXUIElement] = try getAXUIAttr(appEl, kAXWindowsAttribute) else {
-            print(start - CFAbsoluteTimeGetCurrent(), "got ALL app window (NONE)")
-            continue
-        }
-        print(start - CFAbsoluteTimeGetCurrent(), "got ALL app window", _windows.count)
-        if _windows.count == 0 {
-            continue
-        }
-        var windows: [WindowApp.Window] = []
-        for win in _windows {
-            var window = WindowApp.Window()
-            do {
-                window.title = try getAXUIAttr(win, kAXTitleAttribute) ?? ""
-                window.focused = try getAXUIAttr(win, kAXFocusedAttribute) ?? false
-                window.minimized = try getAXUIAttr(win, kAXMinimizedAttribute) ?? false
-                if let _position: AXValue = try getAXUIAttr(win, kAXPositionAttribute) {
+        queue.addOperation {
+            let appEl = AXUIElementCreateApplication(app.processIdentifier)
+            guard let windowEls: [AXUIElement] = getAXUIAttr(appEl, kAXWindowsAttribute) else {
+                return
+            }
+            if windowEls.count == 0 {
+                return
+            }
+            let focusedWindowEl: AXUIElement? = app.isActive ? getAXUIAttr(appEl, kAXFocusedWindowAttribute) : nil
+            var windows: [WindowApp.Window] = []
+            for winEl in windowEls {
+                var window = WindowApp.Window()
+                window.focused = winEl == focusedWindowEl
+                window.title = getAXUIAttr(winEl, kAXTitleAttribute) ?? ""
+                window.minimized = getAXUIAttr(winEl, kAXMinimizedAttribute) ?? false
+                if let _position: AXValue = getAXUIAttr(winEl, kAXPositionAttribute) {
                     AXValueGetValue(_position, .cgPoint, &window.position)
                 }
-                if let _size: AXValue = try getAXUIAttr(win, kAXSizeAttribute) {
+                if let _size: AXValue = getAXUIAttr(winEl, kAXSizeAttribute) {
                     AXValueGetValue(_size, .cgSize, &window.size)
                 }
-            } catch let e as MWCError {
-                print("Unexpected window attribute error:", e, e.message)
-                continue
+                windows.append(window)
             }
-            windows.append(window)
-            print(start - CFAbsoluteTimeGetCurrent(), "parsed a window")
+            queue.addBarrierBlock {
+                winApps.append(WindowApp(
+                    name: app.localizedName ?? "",
+                    pid: Int(app.processIdentifier),
+                    active: app.isActive,
+                    hidden: app.isHidden,
+                    bundleIdent: app.bundleIdentifier,
+                    bundleURL: app.bundleURL?.absoluteString,
+                    execURL: app.executableURL?.absoluteString,
+                    launchDate: (app.launchDate != nil) ? toISODateTime(app.launchDate!) : nil,
+                    windows: windows
+                ))
+            }
         }
-        winApps.append(WindowApp(
-            name: app.localizedName ?? "",
-            pid: Int(app.processIdentifier),
-            windows: windows
-        ))
     }
-    print(start - CFAbsoluteTimeGetCurrent(), "done")
+    queue.waitUntilAllOperationsAreFinished()
     return winApps
 }
 
@@ -296,10 +355,10 @@ public func resizeAppWindow(_ appName: String, _ size: CGSize,
     if position != nil {
         // X, Y get treated like floored Ints, round first...
         var posRounded = CGPoint(x: round(position!.x), y: round(position!.y))
-        try setWinAttrValue(window, kAXPositionAttribute, AXValueCreate(.cgPoint, &posRounded)!)
+        try setAXUIAttr(window, kAXPositionAttribute, AXValueCreate(.cgPoint, &posRounded)!)
     }
     var _size = size
-    try setWinAttrValue(window, kAXSizeAttribute, AXValueCreate(.cgSize, &_size)!)
+    try setAXUIAttr(window, kAXSizeAttribute, AXValueCreate(.cgSize, &_size)!)
     if activate ?? false {
         app.activate()
     }

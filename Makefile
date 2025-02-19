@@ -1,4 +1,4 @@
-SC_FLAGS := -Osize 
+SC_FLAGS := -O
 CLI := macos-window-control
 
 SRCS := $(wildcard src/*)

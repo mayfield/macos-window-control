@@ -26,11 +26,16 @@ function wrap(fn) {
             return resp.value;
         } else if (!resp.success) {
             const E = typedErrors[resp.error.type];
+            let e;
             if (E) {
-                throw new E(resp.error.message);
+                e = new E(resp.error.message);
             } else {
-                throw new MWCError(`${resp.error.type}: ${resp.error.message}`);
+                e = new MWCError(`${resp.error.type}: ${resp.error.message}`);
             }
+            if (resp.error.stack.length) {
+                e.stack += `\n\n---Swift Callstack---\n\n${resp.error.stack.join('\n')}`;
+            }
+            throw e;
         } else {
             throw new Error('Internal Swift Bridge Protocol Error');
         }

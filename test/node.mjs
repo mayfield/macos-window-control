@@ -105,6 +105,7 @@ test('getAppWindowSize', () => {
 
 test('getWindowApps', () => {
     const r = mwc.getWindowApps();
+    console.log(JSON.stringify(r, null, 4));
     assert(Array.isArray(r));
     assert(r.every(x => typeof x === 'object'));
     assert(r.every(x => typeof x.name === 'string'));

@@ -25,6 +25,7 @@ struct ErrorResp: Encodable {
     struct Error: Encodable {
         let type: String
         let message: String
+        let stack: [String]
     }
 
     let success: Bool
@@ -33,7 +34,9 @@ struct ErrorResp: Encodable {
 
 
 func objEncode(_ obj: Encodable, into: UnsafeMutablePointer<CChar>, size: CInt) throws -> CInt {
-    let data = try JSONEncoder().encode(obj)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .sortedKeys
+    let data = try encoder.encode(obj)
     if data.count > size {
         throw MWCError("JSON input buffer overlow")
     }
@@ -55,7 +58,8 @@ func wrapError(_ e: Error) -> ErrorResp {
         success: false,
         error: ErrorResp.Error(
             type: String(describing: type(of: e)),
-            message: (e as? MWCError)?.message ?? String(describing: e)
+            message: (e as? MWCError)?.message ?? String(describing: e),
+            stack: (e as? MWCError)?.stack ?? []
         )
     )
 }
