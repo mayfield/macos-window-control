@@ -18,6 +18,7 @@ int mwc_getMenuBarHeight(char*, int);
 int mwc_getWindowApps(char*, int);
 int mwc_getAppWindowSize(char*, int, char*, int);
 int mwc_resizeAppWindow(char*, int, char*, int);
+int mwc_activateAppWindow(char*, int, char*, int);
 int mwc_getZoom(char*, int);
 int mwc_setZoom(char*, int, char*, int);
 
@@ -142,6 +143,11 @@ static napi_value resizeAppWindow(napi_env env, napi_callback_info info) {
 }
 
 
+static napi_value activateAppWindow(napi_env env, napi_callback_info info) {
+    return swiftCall(env, info, mwc_activateAppWindow);
+}
+
+
 static napi_value getZoom(napi_env env, napi_callback_info info) {
     return swiftCallNoArgs(env, mwc_getZoom);
 }
@@ -166,6 +172,7 @@ static napi_value Init(napi_env env, napi_value exports) {
     ADD_FUNC(getWindowApps);
     ADD_FUNC(getAppWindowSize);
     ADD_FUNC(resizeAppWindow);
+    ADD_FUNC(activateAppWindow);
     ADD_FUNC(getZoom);
     ADD_FUNC(setZoom);
     return exports;

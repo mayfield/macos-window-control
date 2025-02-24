@@ -9,12 +9,14 @@ export class MWCError extends Error {
 }
 export class AXPermError extends MWCError {}
 export class NotFoundError extends MWCError {}
-export class DecodingError extends MWCError {}
+export class ValidationError extends MWCError {}
+export class DecodingError extends ValidationError {}
 
 const typedErrors = {
     AXPermError,
     NotFoundError,
     DecodingError,
+    ValidationError,
 };
 
 
@@ -33,7 +35,8 @@ function wrap(fn) {
                 e = new MWCError(`${resp.error.type}: ${resp.error.message}`);
             }
             if (resp.error.stack.length) {
-                e.stack += `\n\n---Swift Callstack---\n\n${resp.error.stack.join('\n')}`;
+                const relStack = resp.error.stack.filter(x => x.match(/ *[0-9]+ +mwc\.node /));
+                e.stack += `\n\n---Swift Callstack---\n\n${relStack.join('\n')}`;
             }
             throw e;
         } else {
@@ -53,3 +56,4 @@ export const setZoom = wrap(_mwc.setZoom);
 export const getWindowApps = wrap(_mwc.getWindowApps);
 export const getAppWindowSize = wrap(_mwc.getAppWindowSize);
 export const resizeAppWindow = wrap(_mwc.resizeAppWindow);
+export const activateAppWindow = wrap(_mwc.activateAppWindow);

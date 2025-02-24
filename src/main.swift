@@ -1,13 +1,15 @@
 import Foundation
+import Cocoa
 
 
 func resizeCmd(_ appName: String, _ width: Double, _ height: Double,
                x: Double? = nil, y: Double? = nil) throws {
     let size = CGSize(width: width, height: height)
+    let query = AppWindowQuery(app: .init(name: appName))
     if x != nil, y != nil {
-        try resizeAppWindow(appName, size, position: CGPoint(x: CGFloat(x!), y: CGFloat(y!)))
+        try resizeAppWindow(query, size, position: CGPoint(x: CGFloat(x!), y: CGFloat(y!)))
     } else {
-        try resizeAppWindow(appName, size)
+        try resizeAppWindow(query, size)
     }
 }
 
@@ -32,9 +34,11 @@ func zoomCmd(_ factor: Double? = nil, cx: Double? = nil, cy: Double? = nil) thro
 func fullscreenCmd(_ appName: String) throws {
     let sSize = try getMainScreenSize()
     let menuHeight = try getMenuBarHeight()
-    // HACK: I don't know of an API to get the real height.
-    let estAppFrameHeight = 28.0
-    let scale = (sSize.height - menuHeight - estAppFrameHeight) / sSize.height
+    let query = AppWindowQuery(app: .init(name: appName))
+    try activateAppWindow(query)
+    let (_, window) = try getAppWindow(query)
+    let titleBarHeight = getTitlebarHeightEstimate(window)
+    let scale = (sSize.height - menuHeight - titleBarHeight) / sSize.height
     let adjWidth = sSize.width * scale
     let adjHeight = sSize.height - menuHeight
     print("Resizing:", adjWidth, adjHeight, 0, menuHeight)

@@ -25,25 +25,31 @@ test('getZoom-noop-args', () => {
 
 test('resizeAppWindow-invalid-window', () => {
     assert.throws(
-        () => mwc.resizeAppWindow({appName: 'nope-nada def not 123', size: [1, 1], position: [1, 1]}),
-        {name: 'NotFoundError'}
+        () => mwc.resizeAppWindow({query: {app: {name: 'nope-nada def not 123'}}, size: [1, 1], position: [1, 1]}),
+        mwc.NotFoundError
     );
 });
 
 test('resizeAppWindow-bad-args', () => {
-    assert.throws(() => mwc.resizeAppWindow(), {name: 'TypeError'});
-    assert.throws(() => mwc.resizeAppWindow('asdf'), {name: 'DecodingError'});
-    assert.throws(() => mwc.resizeAppWindow({}), {name: 'DecodingError'});
-    assert.throws(() => mwc.resizeAppWindow([]), {name: 'DecodingError'});
-    assert.throws(() => mwc.resizeAppWindow({appName: 'nope nope no'}), {name: 'DecodingError'});
-    assert.throws(() => mwc.resizeAppWindow({appName: 1.234, size: [0, 0]}), {name: 'DecodingError'});
-    assert.throws(() => mwc.resizeAppWindow({appName: null, size: [0, 0]}), {name: 'DecodingError'});
-    assert.throws(() => mwc.resizeAppWindow({appName: {}, size: [0, 0]}), {name: 'DecodingError'});
-    assert.throws(() => mwc.resizeAppWindow({appName: undefined, size: [0, 0]}), {name: 'DecodingError'});
+    assert.throws(() => mwc.resizeAppWindow(), TypeError);
+    assert.throws(() => mwc.resizeAppWindow('asdf'), mwc.ValidationError);
+    assert.throws(() => mwc.resizeAppWindow({}), mwc.ValidationError);
+    assert.throws(() => mwc.resizeAppWindow([]), mwc.ValidationError);
+    assert.throws(() => mwc.resizeAppWindow({query: {app: {name: 'nope nope no'}}}), mwc.ValidationError);
+    assert.throws(() => mwc.resizeAppWindow({query: {app: {name: 1.234}}, size: [0, 0]}), mwc.ValidationError);
+    assert.throws(() => mwc.resizeAppWindow({query: {app: {name: null}}, size: [0, 0]}), mwc.ValidationError);
+    assert.throws(() => mwc.resizeAppWindow({query: {app: {name: {}}}, size: [0, 0]}), mwc.ValidationError);
+    assert.throws(() => mwc.resizeAppWindow({query: {app: {name: undefined}}, size: [0, 0]}), mwc.ValidationError);
+    assert.throws(() => mwc.resizeAppWindow({query: {}, size: [0, 0]}), mwc.ValidationError);
+    assert.throws(() => mwc.resizeAppWindow({query: {app: {}}, size: [0, 0]}), mwc.ValidationError);
+    assert.throws(() => mwc.resizeAppWindow({query: {window: {}}, size: [0, 0]}), mwc.ValidationError);
+    assert.throws(() => mwc.resizeAppWindow({query: {app: {}, window: {}}, size: [0, 0]}), mwc.ValidationError);
+    assert.throws(() => mwc.resizeAppWindow({query: {app: {name: 'foo'}, window: {}}, size: [0, 0]}), mwc.ValidationError);
+    assert.throws(() => mwc.resizeAppWindow({query: {app: {name: 'foo', pid: 111}}, size: [0, 0]}), mwc.ValidationError);
 });
 
 test('resizeAppWindow-Terminal', () => {
-    assert.strictEqual(mwc.resizeAppWindow({appName: 'Terminal', size: [1000, 1000], position: [10, 20]}), undefined);
+    assert.strictEqual(mwc.resizeAppWindow({query: {app: {name: 'Terminal'}}, size: [1000, 1000], position: [10, 20]}), undefined);
 });
 
 test('setZoom', () => {
@@ -64,16 +70,16 @@ test('setZoom', () => {
 
 test('setZoom-bad-args', () => {
     try {
-        assert.throws(() => mwc.setZoom(), {name: 'TypeError'});
-        assert.throws(() => mwc.setZoom('asdf'), {name: 'DecodingError'});
-        assert.throws(() => mwc.setZoom({}), {name: 'DecodingError'});
-        assert.throws(() => mwc.setZoom([]), {name: 'DecodingError'});
-        assert.throws(() => mwc.setZoom({factor: 'nope nope no'}), {name: 'DecodingError'});
-        assert.throws(() => mwc.setZoom({factor: undefined}), {name: 'DecodingError'});
-        assert.throws(() => mwc.setZoom({factor: null}), {name: 'DecodingError'});
-        assert.throws(() => mwc.setZoom({factor: 2, center: [false, 1.1]}), {name: 'DecodingError'});
-        assert.throws(() => mwc.setZoom({factor: 2, center: [1.1, true]}), {name: 'DecodingError'});
-        assert.throws(() => mwc.setZoom({factor: 2, center: [1.1, 'asdf']}), {name: 'DecodingError'});
+        assert.throws(() => mwc.setZoom(), TypeError);
+        assert.throws(() => mwc.setZoom('asdf'), mwc.ValidationError);
+        assert.throws(() => mwc.setZoom({}), mwc.ValidationError);
+        assert.throws(() => mwc.setZoom([]), mwc.ValidationError);
+        assert.throws(() => mwc.setZoom({factor: 'nope nope no'}), mwc.ValidationError);
+        assert.throws(() => mwc.setZoom({factor: undefined}), mwc.ValidationError);
+        assert.throws(() => mwc.setZoom({factor: null}), mwc.ValidationError);
+        assert.throws(() => mwc.setZoom({factor: 2, center: [false, 1.1]}), mwc.ValidationError);
+        assert.throws(() => mwc.setZoom({factor: 2, center: [1.1, true]}), mwc.ValidationError);
+        assert.throws(() => mwc.setZoom({factor: 2, center: [1.1, 'asdf']}), mwc.ValidationError);
     } finally {
         mwc.setZoom({factor: 1})
     }
@@ -92,7 +98,7 @@ test('getMenuBarHeight', () => {
 });
 
 test('getAppWindowSize', () => {
-    const r = mwc.getAppWindowSize({appName: 'Terminal'});
+    const r = mwc.getAppWindowSize({app: {name: 'Terminal'}, window: {main: true}});
     assert.strictEqual(typeof r, 'object');
     assert.strictEqual(Object.keys(r).length, 2);
     assert(Array.isArray(r.size));
@@ -101,16 +107,68 @@ test('getAppWindowSize', () => {
     assert.strictEqual(r.position.length, 2);
     assert(r.size.every(x => typeof x === 'number'));
     assert(r.position.every(x => typeof x === 'number'));
+    const rSame = mwc.getAppWindowSize({app: {name: 'Terminal'}});
+    assert.deepEqual(r, rSame)
+});
+
+test('getAppWindowSize-bad-args', () => {
+    assert.throws(() => mwc.getAppWindowSize({app: {name: 'Terminal'}, window: {main: false}}),
+                  mwc.ValidationError);
+    assert.throws(() => mwc.getAppWindowSize({app: {}, window: {main: true}}), mwc.ValidationError);
+    assert.throws(() => mwc.getAppWindowSize({app: false, window: {main: true}}), mwc.ValidationError);
+    assert.throws(() => mwc.getAppWindowSize({window: {}}), mwc.ValidationError);
+    assert.throws(() => mwc.getAppWindowSize({app: {pid: -100}, window: {}}), mwc.ValidationError);
 });
 
 test('getWindowApps', () => {
     const r = mwc.getWindowApps();
-    console.log(JSON.stringify(r, null, 4));
+    //console.dir(r, {depth: 1000});
     assert(Array.isArray(r));
     assert(r.every(x => typeof x === 'object'));
     assert(r.every(x => typeof x.name === 'string'));
     assert(r.every(x => typeof x.pid === 'number'));
     assert(r.every(x => Array.isArray(x.windows)));
+});
+
+test('activateAppWindow', () => {
+    const winApps = mwc.getWindowApps().filter(x => x.name !== 'Finder');
+    for (const appProp of ['name', 'pid']) {
+        for (const app of winApps) {
+            for (const win of app.windows) {
+                if (!win.title) {
+                    continue;
+                }
+                console.debug(`Activating: ${appProp}:${app[appProp]}, ${win.title}`);
+                mwc.activateAppWindow({
+                    app: {[appProp]: app[appProp]},
+                    window: {title: win.title}
+                });
+            }
+        }
+        for (const app of winApps) {
+            for (const [index, win] of app.windows.entries()) {
+                console.debug(`Activating: ${appProp}:${app[appProp]}, window[${index}]`);
+                mwc.activateAppWindow({
+                    app: {[appProp]: app[appProp]},
+                    window: {index}
+                });
+            }
+        }
+        for (const app of winApps) {
+            console.debug(`Activating: ${appProp}:${app[appProp]} [MAIN Window]`);
+            mwc.activateAppWindow({
+                app: {[appProp]: app[appProp]},
+            });
+        }
+        for (const app of winApps) {
+            console.debug(`Activating: ${appProp}:${app[appProp]} [MAIN Window]`);
+            mwc.activateAppWindow({
+                app: {[appProp]: app[appProp]},
+                window: {main: true}
+            });
+            mwc.activateAppWindow({app: {pid: app.pid}, window: {main: true}});
+        }
+    }
 });
 
 test('spiral', async () => {

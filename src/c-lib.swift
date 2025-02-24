@@ -65,10 +65,14 @@ func wrapError(_ e: Error) -> ErrorResp {
 }
 
 
-func wrapSuccess(_ value: Encodable?) -> SuccessResp {
+func wrapSuccess(_ _value: Encodable?) -> SuccessResp {
+    var value: AnyEncodable?
+    if let x = _value {
+        value = AnyEncodable(x)
+    }
     return SuccessResp(
         success: true,
-        value: value != nil ? AnyEncodable(value!) : nil
+        value: value
     )
 }
 
@@ -126,11 +130,8 @@ public func mwc_getWindowApps(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: 
 public func mwc_getAppWindowSize(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
                                  _ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
     return wrapCall({
-        struct Args: Decodable {
-            let appName: String
-        }
-        let args: Args = try objDecode(argsPtr, size: argsSize)
-        let rect = try getAppWindowSize(args.appName)
+        let query: AppWindowQuery = try objDecode(argsPtr, size: argsSize)
+        let rect = try getAppWindowSize(query)
         return [
             "size": [rect.size.width, rect.size.height],
             "position": [rect.origin.x, rect.origin.y],
@@ -144,13 +145,23 @@ public func mwc_resizeAppWindow(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CIn
                                 _ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
     return wrapCall({
         struct Args: Decodable {
-            let appName: String
+            let query: AppWindowQuery
             let size: CGSize
             let position: CGPoint?
-            let activate: Bool?
         }
         let args: Args = try objDecode(argsPtr, size: argsSize)
-        try resizeAppWindow(args.appName, args.size, position: args.position, activate: args.activate)
+        try resizeAppWindow(args.query, args.size, position: args.position)
+        return nil
+    }, outPtr, outSize)
+}
+
+
+@_cdecl("mwc_activateAppWindow")
+public func mwc_activateAppWindow(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
+                                  _ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+    return wrapCall({
+        let query: AppWindowQuery = try objDecode(argsPtr, size: argsSize)
+        try activateAppWindow(query)
         return nil
     }, outPtr, outSize)
 }

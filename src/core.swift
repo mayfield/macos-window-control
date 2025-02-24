@@ -37,9 +37,33 @@ class AXPermError: MWCError {
 class NotFoundError: MWCError { }
 
 
+class ValidationError: MWCError { }
+
+
+@propertyWrapper
+struct Nullable<T: Encodable>: Encodable {
+    var wrappedValue: T?
+
+    init(wrappedValue: T?) {
+        self.wrappedValue = wrappedValue
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        if let val = self.wrappedValue {
+            try c.encode(val)
+        } else {
+            try c.encodeNil()
+        }
+    }
+}
+
+
 public struct WindowApp: Encodable {
     struct Window: Encodable {
-        var title: String = ""
+        @Nullable var ident: String?
+        @Nullable var title: String?
+        @Nullable var titlebarHeightEstimate: Double?
         var focused: Bool = false
         var minimized: Bool = false
         var size: CGSize = CGSize.zero
@@ -50,11 +74,28 @@ public struct WindowApp: Encodable {
     var pid: Int
     var active: Bool
     var hidden: Bool
-    var bundleIdent: String?
-    var bundleURL: String?
-    var execURL: String?
-    var launchDate: String?
+    @Nullable var bundleIdent: String?
+    @Nullable var bundleURL: String?
+    @Nullable var execURL: String?
+    @Nullable var launchDate: String?
     var windows: [Window]
+}
+
+
+public struct AppWindowQuery: Codable {
+    struct AppIdentifier: Codable {
+        var name: String?
+        var pid: Int?
+    }
+
+    struct WindowIdentifier: Codable {
+        var main: Bool?
+        var index: Int?
+        var title: String?
+    }
+
+    var app: AppIdentifier
+    var window: WindowIdentifier? = nil
 }
 
 
@@ -176,6 +217,30 @@ func getAXUIAttr<T>(_ element: AXUIElement, _ attr: String) -> T? {
     }
 }
 
+func getAXUIParamAttrSafe<T>(_ element: AXUIElement, _ attr: String, _ param: CFTypeRef) throws -> T? {
+    var _val: CFTypeRef?
+    let res = AXUIElementCopyParameterizedAttributeValue(element, attr as CFString, param, &_val)
+    if res != .success || _val == nil {
+        return nil
+    }
+    guard let val = _val as? T else {
+        throw MWCError("Invalid type for attr [\(attr)]: \(T.self) != \(String(describing: _val!))")
+    }
+    return val
+}
+
+
+func getAXUIParamAttr<T>(_ element: AXUIElement, _ attr: String, _ param: CFTypeRef?) -> T? {
+    do {
+        return try getAXUIParamAttrSafe(element, attr, param ?? CFArrayCreate(nil, nil, 0, nil))
+    } catch let e as MWCError {
+        print("Internal type error:", e.message)
+        return nil
+    } catch {
+        return nil
+    }
+}
+
 
 func hasAXUIAttr(_ element: AXUIElement, _ attr: String) -> Bool {
     var count: CFIndex = 0
@@ -226,20 +291,142 @@ func listAXUIParamAttrs(_ element: AXUIElement) -> [String] {
 }
 
 
-func setAXUIAttr(_ el: AXUIElement, _ attr: String, _ value: CFTypeRef) throws {
-    let res = AXUIElementSetAttributeValue(el, attr as CFString, value)
+func setAXUIAttr(_ element: AXUIElement, _ attr: String, _ value: CFTypeRef) throws {
+    let res = AXUIElementSetAttributeValue(element, attr as CFString, value)
     if res != .success {
         throw MWCError("Failed to set attr [\(attr)]: \(res.rawValue)")
     }
 }
 
 
-func getAppMainWindow(_ app: NSRunningApplication) throws -> AXUIElement {
-    let appElement = AXUIElementCreateApplication(app.processIdentifier)
-    guard let window: AXUIElement = try getAXUIAttrSafe(appElement, kAXMainWindowAttribute) else {
-        throw NotFoundError("Failed to get main window")
+func getAXUIElementSize(_ element: AXUIElement) -> CGRect? {
+    var rect = CGRect.zero
+    if let pos: AXValue = getAXUIAttr(element, kAXPositionAttribute),
+       let size: AXValue = getAXUIAttr(element, kAXSizeAttribute) {
+        if AXValueGetValue(pos, .cgPoint, &rect.origin) &&
+           AXValueGetValue(size, .cgSize, &rect.size) {
+            return rect
+        }
     }
-    return window
+    return nil
+}
+
+
+enum AXUIFindCriteria {
+    case role(String)
+    case subrole(String)
+}
+
+func findAXUIElement(_ parent: AXUIElement, _ criteria: AXUIFindCriteria) -> AXUIElement? {
+    // BFS for an AXUIElement...
+    var queue: [AXUIElement] = [parent]
+    let check: ([AXUIElement]) -> AXUIElement? = {
+        for x in $0 {
+            switch criteria {
+                case .role(let crit):
+                    if let test: String = getAXUIAttr(x, kAXRoleAttribute), test == crit {
+                        return x
+                    }
+                case .subrole(let crit):
+                    if let test: String = getAXUIAttr(x, kAXSubroleAttribute), test == crit {
+                        return x
+                    }
+            }
+            queue.append(x)
+        }
+        return nil
+    }
+    while queue.count > 0 {
+        let element = queue.removeFirst()
+        if let children: [AXUIElement] = getAXUIAttr(element, kAXChildrenAttribute),
+           let match = check(children) {
+            return match
+        }
+    }
+    return nil
+}
+
+
+func validateAppWindowQuery(_ query: AppWindowQuery) throws {
+    if query.app.name == nil && query.app.pid == nil {
+        throw ValidationError("app.name or app.pid must be set")
+    }
+    if query.app.name != nil && query.app.pid != nil {
+        throw ValidationError("app.name and app.pid are exclusive")
+    }
+    if let window = query.window {
+        let keysSet = ([window.main, window.index, window.title] as [Any?]).compactMap({$0}).count
+        if keysSet == 0 {
+            throw ValidationError("window.(main, index or title) must be set")
+        } else if keysSet > 1 {
+            throw ValidationError("window properties are mutually exclusive")
+        }
+        if let x = window.main, !x {
+            throw ValidationError("window.main must be omitted or true")
+        }
+    }
+}
+
+
+func getAppWindow(_ query: AppWindowQuery) throws -> (NSRunningApplication, AXUIElement) {
+    try validateAppWindowQuery(query)
+    var _app: NSRunningApplication?
+    let apps = NSWorkspace.shared.runningApplications
+    if let name = query.app.name {
+        _app = apps.first(where: {$0.localizedName == name})
+    } else if let pid = query.app.pid {
+        _app = apps.first(where: {$0.processIdentifier == pid})
+    }
+    guard let app = _app else {
+        throw NotFoundError("App not found")
+    }
+    let appEl = AXUIElementCreateApplication(app.processIdentifier)
+    var _windowEl: AXUIElement?
+    let wQuery = query.window ?? AppWindowQuery.WindowIdentifier(main: true)
+    if wQuery.main == true {
+        _windowEl = try getAXUIAttrSafe(appEl, kAXMainWindowAttribute)
+        // in rare cases an app has a window(s) but none are marked main, just pick first one...
+        if _windowEl == nil,
+           let windowEls: [AXUIElement] = getAXUIAttr(appEl, kAXWindowsAttribute),
+           windowEls.count > 0 {
+            _windowEl = windowEls[0]
+        }
+    } else if let index = wQuery.index {
+        if let windowEls: [AXUIElement] = getAXUIAttr(appEl, kAXWindowsAttribute),
+           windowEls.indices.contains(index) {
+            _windowEl = windowEls[index]
+        }
+    } else if let title = wQuery.title {
+        if let windowEls: [AXUIElement] = getAXUIAttr(appEl, kAXWindowsAttribute) {
+            _windowEl = windowEls.first(where: {getAXUIAttr($0, kAXTitleAttribute) == title})
+        }
+    } else {
+        print(wQuery)
+        throw MWCError("Invalid widow query")
+    }
+    guard let windowEl = _windowEl else {
+        throw NotFoundError("Window not found")
+    }
+    return (app, windowEl)
+}
+
+
+func getTitlebarHeightEstimate(_ window: AXUIElement) -> Double {
+    // I've wasted a few days looking for consistent ways to measure the NSTitlebar[Container]View
+    // to no avail.  The best I can consistently do is find the close button, which every app I've
+    // tested does expose, then make an assumption that it's centered on a menu bar.
+    if let btn = findAXUIElement(window, .subrole("AXCloseButton")),
+       let winSize = getAXUIElementSize(window),
+       let btnSize = getAXUIElementSize(btn) {
+        let height = (btnSize.origin.y - winSize.origin.y) * 2 + btnSize.size.height
+        // Paranoid sanity checks just in case the app in question is odd...
+        if height >= 0 && height < 60 {
+            return height
+        } else {
+            print("Oddly sized close button:", btnSize, "win-size:", winSize, "est-height:", height)
+        }
+    }
+    return 0
 }
 
 
@@ -273,19 +460,13 @@ public func getMenuBarHeight() throws -> Double {
 }
 
 
-public func getAppWindowSize(_ appName: String) throws -> CGRect {
+public func getAppWindowSize(_ query: AppWindowQuery) throws -> CGRect {
     if !hasAccessibilityPermission() {
         throw AXPermError()
     }
-    let app = try getAppByName(appName)
-    let window = try getAppMainWindow(app)
-    var rect = CGRect.zero
-    if let pos: AXValue = try getAXUIAttrSafe(window, kAXPositionAttribute),
-       let size: AXValue = try getAXUIAttrSafe(window, kAXSizeAttribute) {
-        if !AXValueGetValue(pos, .cgPoint, &rect.origin) ||
-           !AXValueGetValue(size, .cgSize, &rect.size) {
-            throw MWCError("Invalid window info")
-        }
+    let (_, window) = try getAppWindow(query)
+    guard let rect = getAXUIElementSize(window) else {
+        throw MWCError("Invalid window info")
     }
     return rect
 }
@@ -313,9 +494,11 @@ public func getWindowApps(windows: Bool? = nil) throws -> [WindowApp] {
             var windows: [WindowApp.Window] = []
             for winEl in windowEls {
                 var window = WindowApp.Window()
+                window.ident = getAXUIAttr(winEl, kAXIdentifierAttribute)
                 window.focused = winEl == focusedWindowEl
-                window.title = getAXUIAttr(winEl, kAXTitleAttribute) ?? ""
+                window.title = getAXUIAttr(winEl, kAXTitleAttribute) ?? nil
                 window.minimized = getAXUIAttr(winEl, kAXMinimizedAttribute) ?? false
+                window.titlebarHeightEstimate = getTitlebarHeightEstimate(winEl)
                 if let _position: AXValue = getAXUIAttr(winEl, kAXPositionAttribute) {
                     AXValueGetValue(_position, .cgPoint, &window.position)
                 }
@@ -344,13 +527,29 @@ public func getWindowApps(windows: Bool? = nil) throws -> [WindowApp] {
 }
 
 
-public func resizeAppWindow(_ appName: String, _ size: CGSize,
-                            position: CGPoint? = nil, activate: Bool? = nil) throws {
+public func activateAppWindow(_ query: AppWindowQuery) throws {
+    let (app, window) = try getAppWindow(query)
+    if app.isHidden {
+        app.unhide();
+    }
+    if #available(macOS 14, *) {
+        // Required in some cases (i.e. ZwiftAppSilicon) but it's unclear why..
+        NSApplication.shared.yieldActivation(to: app)
+    }
+    app.activate()
+    let res = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+    if res != .success {
+        throw MWCError("Failed to raise window: \(res.rawValue)")
+        //try setAXUIAttr(window, kAXMainAttribute, kCFBooleanTrue)
+    }
+}
+
+
+public func resizeAppWindow(_ query: AppWindowQuery, _ size: CGSize, position: CGPoint? = nil) throws {
     if !hasAccessibilityPermission() {
         throw AXPermError()
     }
-    let app = try getAppByName(appName)
-    let window = try getAppMainWindow(app)
+    let (_, window) = try getAppWindow(query)
     // NOTE: Must do position first, side effects occur otherwise...
     if position != nil {
         // X, Y get treated like floored Ints, round first...
@@ -359,7 +558,4 @@ public func resizeAppWindow(_ appName: String, _ size: CGSize,
     }
     var _size = size
     try setAXUIAttr(window, kAXSizeAttribute, AXValueCreate(.cgSize, &_size)!)
-    if activate ?? false {
-        app.activate()
-    }
 }
