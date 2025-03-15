@@ -20,27 +20,36 @@ const typedErrors = {
 };
 
 
-function wrap(fn) {
-    const wrapped = function(arg) {
-        const rawResp = arg ? fn(JSON.stringify(arg)) : fn();
-        const resp = JSON.parse(rawResp);
-        if (resp.success) {
-            return resp.value;
-        } else if (!resp.success) {
-            const E = typedErrors[resp.error.type];
-            let e;
-            if (E) {
-                e = new E(resp.error.message);
-            } else {
-                e = new MWCError(`${resp.error.type}: ${resp.error.message}`);
-            }
-            if (resp.error.stack.length) {
-                const relStack = resp.error.stack.filter(x => x.match(/ *[0-9]+ +mwc\.node /));
-                e.stack += `\n\n---Swift Callstack---\n\n${relStack.join('\n')}`;
-            }
-            throw e;
+function _unwrapResp(rawResp) {
+    const resp = JSON.parse(rawResp);
+    if (resp.success) {
+        return resp.value;
+    } else if (!resp.success) {
+        const E = typedErrors[resp.error.type];
+        let e;
+        if (E) {
+            e = new E(resp.error.message);
         } else {
-            throw new Error('Internal Swift Bridge Protocol Error');
+            e = new MWCError(`${resp.error.type}: ${resp.error.message}`);
+        }
+        if (resp.error.stack.length) {
+            const relStack = resp.error.stack.filter(x => x.match(/ *[0-9]+ +mwc\.node /));
+            e.stack += `\n\n---Swift Callstack---\n\n${relStack.join('\n')}`;
+        }
+        throw e;
+    } else {
+        throw new Error('Internal Swift Bridge Protocol Error');
+    }
+}
+
+
+function wrap(fn) {
+    const wrapped = function(arg={}) {
+        const rawResp = fn(JSON.stringify(arg));
+        if (rawResp instanceof Promise) {
+            return rawResp.then(_unwrapResp);
+        } else {
+            return _unwrapResp(rawResp);
         }
     };
     Object.defineProperty(wrapped, 'name', {value: fn.name});
@@ -53,7 +62,8 @@ export const getMainScreenSize = wrap(_mwc.getMainScreenSize);
 export const getMenuBarHeight = wrap(_mwc.getMenuBarHeight);
 export const getZoom = wrap(_mwc.getZoom);
 export const setZoom = wrap(_mwc.setZoom);
-export const getWindowApps = wrap(_mwc.getWindowApps);
-export const getAppWindowSize = wrap(_mwc.getAppWindowSize);
-export const resizeAppWindow = wrap(_mwc.resizeAppWindow);
-export const activateAppWindow = wrap(_mwc.activateAppWindow);
+export const getApps = wrap(_mwc.getApps);
+export const getWindows = wrap(_mwc.getWindows);
+export const getWindowSize = wrap(_mwc.getWindowSize);
+export const setWindowSize = wrap(_mwc.setWindowSize);
+export const activateWindow = wrap(_mwc.activateWindow);

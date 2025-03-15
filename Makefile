@@ -1,4 +1,9 @@
-SC_FLAGS := -O
+SC_FLAGS := -O \
+	-enable-actor-data-race-checks \
+	-warnings-as-errors
+C_LIB_FLAGS := -emit-library \
+	-Xcc -std=gnu++11 -cxx-interoperability-mode=default \
+	-emit-clang-header-path obj/mwc.h
 CLI := macos-window-control
 
 SRCS := $(wildcard src/*)
@@ -28,8 +33,8 @@ $(CLI): $(SRCS) Makefile
 	lipo -create $(OBJ)/$(CLI).arm64 $(OBJ)/$(CLI).x86_64 -output $(CLI)
 
 c-lib: $(SRCS) Makefile
-	swiftc src/core.swift src/c-lib.swift -emit-library -target arm64-apple-macos11 $(SC_FLAGS) -static -o $(OBJ)/mwc.a.arm64
-	swiftc src/core.swift src/c-lib.swift -emit-library -target x86_64-apple-macos11 $(SC_FLAGS) -static -o $(OBJ)/mwc.a.x86_64
+	swiftc src/core.swift src/c-lib.swift -target arm64-apple-macos11 $(SC_FLAGS) $(C_LIB_FLAGS) -o $(OBJ)/mwc.a.arm64
+	swiftc src/core.swift src/c-lib.swift -target x86_64-apple-macos11 $(SC_FLAGS) $(C_LIB_FLAGS) -o $(OBJ)/mwc.a.x86_64
 	lipo -create $(OBJ)/mwc.a.arm64 $(OBJ)/mwc.a.x86_64 -output $(OBJ)/mwc.a
 
 test: $(TESTS) Makefile node-build

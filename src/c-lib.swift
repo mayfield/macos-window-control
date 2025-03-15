@@ -1,6 +1,9 @@
 import Foundation
 
 
+typealias DeferredCallback = @convention(c) (UnsafeRawPointer, UnsafeRawPointer, CInt) -> Void
+
+
 // Hack around swift type system...
 struct AnyEncodable: Encodable {
     private let _encode: (Encoder) throws -> Void
@@ -33,12 +36,18 @@ struct ErrorResp: Encodable {
 }
 
 
+struct AppWindowIdentifier: Codable {
+    var app: AppIdentifier
+    var window: WindowIdentifier? = nil
+}
+
+
 func objEncode(_ obj: Encodable, into: UnsafeMutablePointer<CChar>, size: CInt) throws -> CInt {
     let encoder = JSONEncoder()
     encoder.outputFormatting = .sortedKeys
     let data = try encoder.encode(obj)
     if data.count > size {
-        throw MWCError("JSON input buffer overlow")
+        throw MWCError("JSON input buffer too small")
     }
     data.withUnsafeBytes { (p: UnsafeRawBufferPointer) in
         _ = memcpy(into, p.baseAddress, data.count)
@@ -94,6 +103,45 @@ func wrapCall(_ fnClosure: () throws -> Encodable?, _ outPtr: UnsafeMutablePoint
 }
 
 
+func wrapCallAsync(_ fnClosure: @escaping () async throws -> Encodable?,
+                   _ rawDeferredCtx: UnsafeRawPointer, _ rawDeferredCallback: UnsafeRawPointer) {
+    print("  outside task", getpid())
+    let deferredCallback = unsafeBitCast(rawDeferredCallback, to: DeferredCallback.self)
+    // Swift 6 requires this evil hack..
+    struct CtxWrap: @unchecked Sendable {
+        let raw: UnsafeRawPointer
+    }
+    let deferredCtxWrap = CtxWrap(raw: rawDeferredCtx)
+    DispatchQueue.global().async {
+        print("    inside dispatch queue ", getpid())
+        Task {
+            print("       inside task")
+            do {
+                print("starttit  XXX")
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = .sortedKeys
+                var data: Data
+                do {
+                    data = try encoder.encode(wrapSuccess(try await fnClosure()))
+                } catch let e {
+                    data = try encoder.encode(wrapError(e))
+                }
+                print("back from async, ready to call back to node deferred callbavck XXX", data)
+                data.withUnsafeBytes { (p: UnsafeRawBufferPointer) in
+                    deferredCallback(deferredCtxWrap.raw, p.baseAddress!, CInt(data.count))
+                    print("did it work???????...", data)
+                }
+                print("DIDI I DIE??????")
+            } catch let e {
+                print("Internal Error", e)
+            }
+        }
+        print("after Task.detached")
+    }
+    print("after dispatch queue.detached")
+}
+
+
 @_cdecl("mwc_hasAccessibilityPermission")
 public func mwc_hasAccessibilityPermission(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
     return wrapCall({
@@ -118,20 +166,46 @@ public func mwc_getMenuBarHeight(_ outPtr: UnsafeMutablePointer<CChar>, _ outSiz
 }
 
 
-@_cdecl("mwc_getWindowApps")
-public func mwc_getWindowApps(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+@_cdecl("mwc_getApps")
+public func mwc_getApps(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
+                        _ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
     return wrapCall({
-        return try getWindowApps()
+        return try getAppDescs()
     }, outPtr, outSize)
 }
 
 
-@_cdecl("mwc_getAppWindowSize")
-public func mwc_getAppWindowSize(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
-                                 _ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+@_cdecl("mwc_getWindows")
+public func mwc_getWindows(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
+                           _ deferredCtx: UnsafeRawPointer, _ deferredCallbackRaw: UnsafeRawPointer) {
+    print("hello", argsPtr, argsSize, deferredCtx, deferredCallbackRaw)
+    print("hello", argsPtr, argsSize, deferredCtx, deferredCallbackRaw)
+    print("hello", argsPtr, argsSize, deferredCtx, deferredCallbackRaw)
+    print("hello", argsPtr, argsSize, deferredCtx, deferredCallbackRaw)
+    print("hello", argsPtr, argsSize, deferredCtx, String(describing: deferredCallbackRaw))
+    //Task {
+    //    print("hello there 2222")
+        wrapCallAsync({
+            print("hello there 3333")
+            struct Args: Decodable {
+                let app: AppIdentifier
+            }
+            let args: Args = try objDecode(argsPtr, size: argsSize)
+            print("args are good", args)
+            return try await getWindowDescs(args.app)
+        }, deferredCtx, deferredCallbackRaw)
+    //}
+    print("AFTER TASK...... hello", argsPtr, argsSize, deferredCtx, deferredCallbackRaw)
+}
+
+
+
+@_cdecl("mwc_getWindowSize")
+public func mwc_getWindowSize(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
+                              _ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
     return wrapCall({
-        let query: AppWindowQuery = try objDecode(argsPtr, size: argsSize)
-        let rect = try getAppWindowSize(query)
+        let ident: AppWindowIdentifier = try objDecode(argsPtr, size: argsSize)
+        let rect = try getWindowSize(ident.app, ident.window)
         return [
             "size": [rect.size.width, rect.size.height],
             "position": [rect.origin.x, rect.origin.y],
@@ -140,28 +214,29 @@ public func mwc_getAppWindowSize(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CI
 }
 
 
-@_cdecl("mwc_resizeAppWindow")
-public func mwc_resizeAppWindow(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
-                                _ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+@_cdecl("mwc_setWindowSize")
+public func mwc_setWindowSize(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
+                              _ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
     return wrapCall({
         struct Args: Decodable {
-            let query: AppWindowQuery
+            let app: AppIdentifier
+            let window: WindowIdentifier?
             let size: CGSize
             let position: CGPoint?
         }
         let args: Args = try objDecode(argsPtr, size: argsSize)
-        try resizeAppWindow(args.query, args.size, position: args.position)
+        try setWindowSize(args.app, args.window, args.size, position: args.position)
         return nil
     }, outPtr, outSize)
 }
 
 
-@_cdecl("mwc_activateAppWindow")
-public func mwc_activateAppWindow(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
-                                  _ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+@_cdecl("mwc_activateWindow")
+public func mwc_activateWindow(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
+                               _ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
     return wrapCall({
-        let query: AppWindowQuery = try objDecode(argsPtr, size: argsSize)
-        try activateAppWindow(query)
+        let ident: AppWindowIdentifier = try objDecode(argsPtr, size: argsSize)
+        try activateWindow(ident.app, ident.window)
         return nil
     }, outPtr, outSize)
 }
@@ -170,13 +245,13 @@ public func mwc_activateAppWindow(_ argsPtr: UnsafePointer<CChar>, _ argsSize: C
 @_cdecl("mwc_getZoom")
 public func mwc_getZoom(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
     return wrapCall({
-        let (factor, center, smooth) = try getZoom()
+        let (scale, center, smooth) = try getZoom()
         struct Resp: Encodable {
-            let factor: Double
+            let scale: Double
             let smooth: Bool
             let center: [String: Double]
         }
-        return Resp(factor: factor, smooth: smooth, center: ["x": center.x, "y": center.y])
+        return Resp(scale: scale, smooth: smooth, center: ["x": center.x, "y": center.y])
     }, outPtr, outSize)
 }
 
@@ -186,12 +261,12 @@ public func mwc_setZoom(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
                         _ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
     return wrapCall({
         struct Args: Decodable {
-            let factor: Double
+            let scale: Double
             let center: CGPoint?
             let smooth: Bool?
         }
         let args: Args = try objDecode(argsPtr, size: argsSize)
-        try setZoom(args.factor, center: args.center, smooth: args.smooth)
+        try setZoom(args.scale, center: args.center, smooth: args.smooth)
         return nil
     }, outPtr, outSize)
 }

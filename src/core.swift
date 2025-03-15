@@ -58,18 +58,17 @@ struct Nullable<T: Encodable>: Encodable {
     }
 }
 
+struct WindowDesc: Encodable {
+    @Nullable var ident: String?
+    @Nullable var title: String?
+    @Nullable var titlebarHeightEstimate: Double?
+    var focused: Bool = false
+    var minimized: Bool = false
+    var size: CGSize = CGSize.zero
+    var position: CGPoint = CGPoint.zero
+}
 
-public struct WindowApp: Encodable {
-    struct Window: Encodable {
-        @Nullable var ident: String?
-        @Nullable var title: String?
-        @Nullable var titlebarHeightEstimate: Double?
-        var focused: Bool = false
-        var minimized: Bool = false
-        var size: CGSize = CGSize.zero
-        var position: CGPoint = CGPoint.zero
-    }
-
+struct AppDesc: Encodable {
     var name: String
     var pid: Int
     var active: Bool
@@ -78,24 +77,18 @@ public struct WindowApp: Encodable {
     @Nullable var bundleURL: String?
     @Nullable var execURL: String?
     @Nullable var launchDate: String?
-    var windows: [Window]
 }
 
 
-public struct AppWindowQuery: Codable {
-    struct AppIdentifier: Codable {
-        var name: String?
-        var pid: Int?
-    }
+struct AppIdentifier: Codable {
+    var name: String?
+    var pid: Int?
+}
 
-    struct WindowIdentifier: Codable {
-        var main: Bool?
-        var index: Int?
-        var title: String?
-    }
-
-    var app: AppIdentifier
-    var window: WindowIdentifier? = nil
+struct WindowIdentifier: Codable {
+    var main: Bool?
+    var index: Int?
+    var title: String?
 }
 
 
@@ -106,8 +99,8 @@ func getCGSConnectionID() throws -> Int {
         if fnSym == nil {
             throw MWCError("Failed to find CGSMainConnectionID function")
         }
-        typealias Args = @convention(c) (UnsafeRawPointer?) -> Int
-        let fn = unsafeBitCast(fnSym, to: Args.self)
+        typealias Sig = @convention(c) (UnsafeRawPointer?) -> Int
+        let fn = unsafeBitCast(fnSym, to: Sig.self)
         _coreGraphicsConnId = fn(nil)
     }
     return _coreGraphicsConnId!
@@ -140,16 +133,21 @@ func getGetZoomFunc() throws -> GetZoomFunc {
 }
 
 
-public func setZoom(_ factor: Double, center: CGPoint? = nil, smooth: Bool? = nil) throws {
-    var centerFinal: CGPoint
-    if center != nil {
+func setZoom(_ scale: Double, center: CGPoint? = nil, smooth: Bool? = nil) throws {
+    var _center: CGPoint
+    if let center = center {
         // X, Y get floored, round first...
-        centerFinal = CGPoint(x: round(center!.x), y: round(center!.y))
+        _center = CGPoint(x: round(center.x), y: round(center.y))
     } else {
-        let (_, _center, _) = try getZoom()
-        centerFinal = _center
+        let (_, center, _) = try getZoom()
+        _center = center
     }
-    let _smooth = smooth != nil ? smooth : factor > 1
+    var _smooth: Bool
+    if let smooth = smooth {
+        _smooth = smooth
+    } else {
+        _smooth = scale > 1
+    }
     // HACK: This private function doesn't play well with the built-in zoom feature.
     // We need to dirty the state (using inverted smooth value is sufficient) before
     // Sending our final values..  Validate this with:
@@ -159,14 +157,14 @@ public func setZoom(_ factor: Double, center: CGPoint? = nil, smooth: Bool? = ni
     // Expect no corruption on screen if it worked.
     let cid = try getCGSConnectionID()
     let setZoomFn = try getSetZoomFunc()
-    withUnsafePointer(to: &centerFinal) {
-        setZoomFn(cid, $0, factor, !_smooth!)
-        setZoomFn(cid, $0, factor, _smooth!)
+    withUnsafePointer(to: &_center) {
+        setZoomFn(cid, $0, scale, !_smooth)
+        setZoomFn(cid, $0, scale, _smooth)
     }
 }
 
 
-public func getZoom() throws -> (Double, CGPoint, Bool) {
+func getZoom() throws -> (Double, CGPoint, Bool) {
     let cid = try getCGSConnectionID()
     let getZoomFn = try getGetZoomFunc()
     var center = CGPoint.zero
@@ -347,14 +345,14 @@ func findAXUIElement(_ parent: AXUIElement, _ criteria: AXUIFindCriteria) -> AXU
 }
 
 
-func validateAppWindowQuery(_ query: AppWindowQuery) throws {
-    if query.app.name == nil && query.app.pid == nil {
-        throw ValidationError("app.name or app.pid must be set")
+func validateAppWindowQuery(_ appIdent: AppIdentifier, _ winIdent: WindowIdentifier? = nil) throws {
+    if appIdent.name == nil && appIdent.pid == nil {
+        throw ValidationError("app 'name' or 'pid' must be set")
     }
-    if query.app.name != nil && query.app.pid != nil {
-        throw ValidationError("app.name and app.pid are exclusive")
+    if appIdent.name != nil && appIdent.pid != nil {
+        throw ValidationError("app 'name' and 'pid' are exclusive")
     }
-    if let window = query.window {
+    if let window = winIdent {
         let keysSet = ([window.main, window.index, window.title] as [Any?]).compactMap({$0}).count
         if keysSet == 0 {
             throw ValidationError("window.(main, index or title) must be set")
@@ -368,22 +366,34 @@ func validateAppWindowQuery(_ query: AppWindowQuery) throws {
 }
 
 
-func getAppWindow(_ query: AppWindowQuery) throws -> (NSRunningApplication, AXUIElement) {
-    try validateAppWindowQuery(query)
+func getApp(_ appIdent: AppIdentifier) throws -> NSRunningApplication {
     var _app: NSRunningApplication?
     let apps = NSWorkspace.shared.runningApplications
-    if let name = query.app.name {
+    if let name = appIdent.name {
         _app = apps.first(where: {$0.localizedName == name})
-    } else if let pid = query.app.pid {
+    } else if let pid = appIdent.pid {
         _app = apps.first(where: {$0.processIdentifier == pid})
     }
     guard let app = _app else {
         throw NotFoundError("App not found")
     }
+    return app
+}
+
+
+func getAppWindow(_ appIdent: AppIdentifier) throws -> (NSRunningApplication, AXUIElement) {
+    return try getAppWindow(appIdent, nil);
+}
+
+
+func getAppWindow(_ appIdent: AppIdentifier, _ winIdent: WindowIdentifier?) throws
+               -> (NSRunningApplication, AXUIElement) {
+    try validateAppWindowQuery(appIdent, winIdent)
+    let app = try getApp(appIdent)
     let appEl = AXUIElementCreateApplication(app.processIdentifier)
     var _windowEl: AXUIElement?
-    let wQuery = query.window ?? AppWindowQuery.WindowIdentifier(main: true)
-    if wQuery.main == true {
+    let wIdent = winIdent ?? WindowIdentifier(main: true)
+    if wIdent.main == true {
         _windowEl = try getAXUIAttrSafe(appEl, kAXMainWindowAttribute)
         // in rare cases an app has a window(s) but none are marked main, just pick first one...
         if _windowEl == nil,
@@ -391,18 +401,17 @@ func getAppWindow(_ query: AppWindowQuery) throws -> (NSRunningApplication, AXUI
            windowEls.count > 0 {
             _windowEl = windowEls[0]
         }
-    } else if let index = wQuery.index {
+    } else if let index = wIdent.index {
         if let windowEls: [AXUIElement] = getAXUIAttr(appEl, kAXWindowsAttribute),
            windowEls.indices.contains(index) {
             _windowEl = windowEls[index]
         }
-    } else if let title = wQuery.title {
+    } else if let title = wIdent.title {
         if let windowEls: [AXUIElement] = getAXUIAttr(appEl, kAXWindowsAttribute) {
             _windowEl = windowEls.first(where: {getAXUIAttr($0, kAXTitleAttribute) == title})
         }
     } else {
-        print(wQuery)
-        throw MWCError("Invalid widow query")
+        throw MWCError("Invalid widow identifier")
     }
     guard let windowEl = _windowEl else {
         throw NotFoundError("Window not found")
@@ -430,21 +439,12 @@ func getTitlebarHeightEstimate(_ window: AXUIElement) -> Double {
 }
 
 
-func getAppByName(_ name: String) throws -> NSRunningApplication {
-    let apps = NSWorkspace.shared.runningApplications
-    guard let app = apps.first(where: {$0.localizedName == name}) else {
-        throw NotFoundError("App not found")
-    }
-    return app
-}
-
-
-public func hasAccessibilityPermission() -> Bool {
+func hasAccessibilityPermission() -> Bool {
     return AXIsProcessTrusted()
 }
 
 
-public func getMainScreenSize() throws -> CGSize {
+func getMainScreenSize() throws -> CGSize {
     guard let screen = NSScreen.main else {
         throw MWCError("Main screen unavailable")
     }
@@ -452,7 +452,7 @@ public func getMainScreenSize() throws -> CGSize {
 }
 
 
-public func getMenuBarHeight() throws -> Double {
+func getMenuBarHeight() throws -> Double {
     guard let screen = NSScreen.main else {
         throw MWCError("Main screen unavailable")
     }
@@ -460,11 +460,16 @@ public func getMenuBarHeight() throws -> Double {
 }
 
 
-public func getAppWindowSize(_ query: AppWindowQuery) throws -> CGRect {
+func getWindowSize(_ appIdent: AppIdentifier) throws -> CGRect {
+    return try getWindowSize( appIdent, nil);
+}
+
+
+func getWindowSize(_ appIdent: AppIdentifier, _ winIdent: WindowIdentifier?) throws -> CGRect {
     if !hasAccessibilityPermission() {
         throw AXPermError()
     }
-    let (_, window) = try getAppWindow(query)
+    let (_, window) = try getAppWindow(appIdent, winIdent)
     guard let rect = getAXUIElementSize(window) else {
         throw MWCError("Invalid window info")
     }
@@ -472,63 +477,72 @@ public func getAppWindowSize(_ query: AppWindowQuery) throws -> CGRect {
 }
 
 
-public func getWindowApps(windows: Bool? = nil) throws -> [WindowApp] {
+func getAppDescs() throws -> [AppDesc] {
     if !hasAccessibilityPermission() {
         throw AXPermError()
     }
     let apps = NSWorkspace.shared.runningApplications.filter {
         return $0.isFinishedLaunching && !ignoredBundleIds.contains($0.bundleIdentifier ?? "")
     }
-    var winApps: [WindowApp] = []
-    let queue = OperationQueue()
-    for app in apps {
-        queue.addOperation {
-            let appEl = AXUIElementCreateApplication(app.processIdentifier)
-            guard let windowEls: [AXUIElement] = getAXUIAttr(appEl, kAXWindowsAttribute) else {
-                return
-            }
-            if windowEls.count == 0 {
-                return
-            }
-            let focusedWindowEl: AXUIElement? = app.isActive ? getAXUIAttr(appEl, kAXFocusedWindowAttribute) : nil
-            var windows: [WindowApp.Window] = []
-            for winEl in windowEls {
-                var window = WindowApp.Window()
-                window.ident = getAXUIAttr(winEl, kAXIdentifierAttribute)
-                window.focused = winEl == focusedWindowEl
-                window.title = getAXUIAttr(winEl, kAXTitleAttribute) ?? nil
-                window.minimized = getAXUIAttr(winEl, kAXMinimizedAttribute) ?? false
-                window.titlebarHeightEstimate = getTitlebarHeightEstimate(winEl)
-                if let _position: AXValue = getAXUIAttr(winEl, kAXPositionAttribute) {
-                    AXValueGetValue(_position, .cgPoint, &window.position)
-                }
-                if let _size: AXValue = getAXUIAttr(winEl, kAXSizeAttribute) {
-                    AXValueGetValue(_size, .cgSize, &window.size)
-                }
-                windows.append(window)
-            }
-            queue.addBarrierBlock {
-                winApps.append(WindowApp(
-                    name: app.localizedName ?? "",
-                    pid: Int(app.processIdentifier),
-                    active: app.isActive,
-                    hidden: app.isHidden,
-                    bundleIdent: app.bundleIdentifier,
-                    bundleURL: app.bundleURL?.absoluteString,
-                    execURL: app.executableURL?.absoluteString,
-                    launchDate: (app.launchDate != nil) ? toISODateTime(app.launchDate!) : nil,
-                    windows: windows
-                ))
-            }
-        }
+    return apps.map { app in
+        AppDesc(
+            name: app.localizedName ?? "",
+            pid: Int(app.processIdentifier),
+            active: app.isActive,
+            hidden: app.isHidden,
+            bundleIdent: app.bundleIdentifier,
+            bundleURL: app.bundleURL?.absoluteString,
+            execURL: app.executableURL?.absoluteString,
+            launchDate: (app.launchDate != nil) ? toISODateTime(app.launchDate!) : nil
+        )
     }
-    queue.waitUntilAllOperationsAreFinished()
-    return winApps
 }
 
 
-public func activateAppWindow(_ query: AppWindowQuery) throws {
-    let (app, window) = try getAppWindow(query)
+func getWindowDesc(_ winEl: AXUIElement, focused: Bool? = nil) -> WindowDesc {
+    var window = WindowDesc(
+        ident: getAXUIAttr(winEl, kAXIdentifierAttribute),
+        title: getAXUIAttr(winEl, kAXTitleAttribute) ?? nil,
+        titlebarHeightEstimate: getTitlebarHeightEstimate(winEl),
+        focused: focused ?? false,
+        minimized: getAXUIAttr(winEl, kAXMinimizedAttribute) ?? false
+    )
+    if let _position: AXValue = getAXUIAttr(winEl, kAXPositionAttribute) {
+        AXValueGetValue(_position, .cgPoint, &window.position)
+    }
+    if let _size: AXValue = getAXUIAttr(winEl, kAXSizeAttribute) {
+        AXValueGetValue(_size, .cgSize, &window.size)
+    }
+    return window
+}
+
+
+func getWindowDescs(_ appIdent: AppIdentifier) async throws -> [WindowDesc] {
+    try validateAppWindowQuery(appIdent)
+    if !hasAccessibilityPermission() {
+        throw AXPermError()
+    }
+    let app = try getApp(appIdent)
+    let pid = app.processIdentifier
+    return await withCheckedContinuation { cont in
+        DispatchQueue.global().async {
+            let appEl = AXUIElementCreateApplication(pid)
+            var windows: [WindowDesc] = []
+            if let windowEls: [AXUIElement] = getAXUIAttr(appEl, kAXWindowsAttribute),
+               windowEls.count > 0 {
+                let focusedWindowEl: AXUIElement? = app.isActive ? getAXUIAttr(appEl, kAXFocusedWindowAttribute) : nil
+                for winEl in windowEls {
+                    windows.append(getWindowDesc(winEl, focused: winEl == focusedWindowEl))
+                }
+            }
+            cont.resume(returning: windows)
+        }
+    }
+}
+
+
+func activateWindow(_ appIdent: AppIdentifier, _ winIdent: WindowIdentifier? = nil) throws {
+    let (app, window) = try getAppWindow(appIdent, winIdent)
     if app.isHidden {
         app.unhide();
     }
@@ -545,11 +559,17 @@ public func activateAppWindow(_ query: AppWindowQuery) throws {
 }
 
 
-public func resizeAppWindow(_ query: AppWindowQuery, _ size: CGSize, position: CGPoint? = nil) throws {
+func setWindowSize(_ appIdent: AppIdentifier, _ size: CGSize, position: CGPoint? = nil) throws {
+    return try setWindowSize(appIdent, nil, size, position: position)
+}
+
+
+func setWindowSize(_ appIdent: AppIdentifier, _ winIdent: WindowIdentifier?,
+                   _ size: CGSize, position: CGPoint? = nil) throws {
     if !hasAccessibilityPermission() {
         throw AXPermError()
     }
-    let (_, window) = try getAppWindow(query)
+    let (_, window) = try getAppWindow(appIdent, winIdent)
     // NOTE: Must do position first, side effects occur otherwise...
     if position != nil {
         // X, Y get treated like floored Ints, round first...

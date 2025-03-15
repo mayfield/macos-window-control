@@ -5,28 +5,27 @@ import Cocoa
 func resizeCmd(_ appName: String, _ width: Double, _ height: Double,
                x: Double? = nil, y: Double? = nil) throws {
     let size = CGSize(width: width, height: height)
-    let query = AppWindowQuery(app: .init(name: appName))
-    if x != nil, y != nil {
-        try resizeAppWindow(query, size, position: CGPoint(x: CGFloat(x!), y: CGFloat(y!)))
-    } else {
-        try resizeAppWindow(query, size)
+    let appIdent = AppIdentifier(name: appName)
+    var position: CGPoint?
+    if let x = x, let y = y {
+        position = CGPoint(x: CGFloat(x), y: CGFloat(y))
     }
+    try setWindowSize(appIdent, size, position: position)
 }
 
 
-func zoomCmd(_ factor: Double? = nil, cx: Double? = nil, cy: Double? = nil) throws {
-    if factor == nil {
-        let (factor, center, smooth) = try getZoom()
-        print("Zoom:", factor)
+func zoomCmd(_ scale: Double? = nil, cx: Double? = nil, cy: Double? = nil) throws {
+    if let scale = scale {
+        var center: CGPoint?
+        if let x = cx, let y = cy {
+            center = CGPoint(x: x, y: y)
+        }
+        try setZoom(scale, center: center)
+    } else {
+        let (scale, center, smooth) = try getZoom()
+        print("Zoom:", scale)
         print("Center:", center)
         print("Smooth:", smooth)
-        return
-    } else {
-        if cx == nil || cy == nil {
-            try setZoom(factor!)
-        } else {
-            try setZoom(factor!, center: CGPoint(x: cx!, y: cy!))
-        }
     }
 }
 
@@ -34,9 +33,9 @@ func zoomCmd(_ factor: Double? = nil, cx: Double? = nil, cy: Double? = nil) thro
 func fullscreenCmd(_ appName: String) throws {
     let sSize = try getMainScreenSize()
     let menuHeight = try getMenuBarHeight()
-    let query = AppWindowQuery(app: .init(name: appName))
-    try activateAppWindow(query)
-    let (_, window) = try getAppWindow(query)
+    let appIdent = AppIdentifier(name: appName)
+    try activateWindow(appIdent)
+    let (_, window) = try getAppWindow(appIdent)
     let titleBarHeight = getTitlebarHeightEstimate(window)
     let scale = (sSize.height - menuHeight - titleBarHeight) / sSize.height
     let adjWidth = sSize.width * scale
@@ -56,7 +55,7 @@ func usageAndExit() {
     print("    Example: \(prog) resize ZwiftAppSilicon 1920 1080")
     print("")
     print("  Command 'zoom':")
-    print("    Args: [FACTOR [CENTER_X CENTER_Y]]")
+    print("    Args: [SCALE [CENTER_X CENTER_Y]]")
     print("    Example: \(prog) zoom 1.2 960 640")
     print("")
     print("  Command 'fullscreen':")
@@ -96,8 +95,8 @@ func main() throws {
         if args.count < 3 {
             return try zoomCmd()
         }
-        guard let factor = Double(args[2]) else {
-            print("Invalid number for factor")
+        guard let scale = Double(args[2]) else {
+            print("Invalid number for scale")
             return usageAndExit()
         }
         if args.count >= 5 {
@@ -106,9 +105,9 @@ func main() throws {
                 print("Invalid numbers for center-x, or center-y")
                 return usageAndExit()
             }
-            return try zoomCmd(factor, cx: cx, cy: cy)
+            return try zoomCmd(scale, cx: cx, cy: cy)
         } else {
-            return try zoomCmd(factor)
+            return try zoomCmd(scale)
         }
     } else if cmdName == "fullscreen" {
         if args.count < 3 {
