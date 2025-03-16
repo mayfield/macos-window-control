@@ -7,9 +7,13 @@ test('hasAccessiblityPermission', () => {
 });
 
 test('getWindows', async () => {
-    const p = mwc.getWindows({app: {name: "Terminal"}});
-    console.log("p", p);
-    console.log("await p", await p);
+    const promises = [];
+    for (let i = 0; i < 10; i++) {
+        const p = mwc.getWindows({app: {name: "Terminal"}});
+        promises.push(p);
+        console.log("p", p);
+    }
+    console.log('all of them...', await Promise.all(promises));
 });
 
 test('getZoom', () => {

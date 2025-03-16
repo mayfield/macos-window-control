@@ -44,14 +44,16 @@ static void deferred_tsfn(napi_env env, napi_value _jscb, napi_deferred deferred
     if (ret_json == NULL) {
         fprintf(stderr, "Ooops: Swift error\n"); // XXX remove after test..
         napi_reject_deferred(env, deferred, NULL);
-        return;
-    } else if (napi_create_string_utf8(env, ret_json, NAPI_AUTO_LENGTH, &ret) != napi_ok) {
-        printf("Ooops: internal swift ret value error\n"); // remove after verify.
-        napi_reject_deferred(env, deferred, NULL);
-        return;
+    } else {
+        napi_status r = napi_create_string_utf8(env, ret_json, NAPI_AUTO_LENGTH, &ret);
+        free(ret_json);
+        if (r == napi_ok) {
+            napi_resolve_deferred(env, deferred, ret);
+        } else {
+            printf("Ooops: internal swift ret value error\n"); // remove after verify.
+            napi_reject_deferred(env, deferred, NULL);
+        }
     }
-    napi_resolve_deferred(env, deferred, ret);
-    printf("REsolved prommise, nowI'm outta here\n");
 }
 
 
@@ -63,7 +65,7 @@ static void deferred_cb(napi_threadsafe_function tsfn, char* ret_buf, int ret_si
     printf("Blcoakin call into tsfn.... %s\n", ret_json);
     napi_status r = napi_call_threadsafe_function(tsfn, ret_json, napi_tsfn_nonblocking);
     printf("BACK FROM blockiung call into tsfn....%d\n", r);
-    napi_release_threadsafe_function(tsfn, napi_tsfn_release);
+    napi_release_threadsafe_function(tsfn, napi_tsfn_release); // XXX comment out and see if we leak, it's just a bit ambiguous in the docs
     if (r != napi_ok) {
         fprintf(stderr, "Failed to call thread safe function\n");
         return;
@@ -120,6 +122,7 @@ static napi_value swiftCall(napi_env env, napi_callback_info info, swift_call_t 
         goto cleanup;
     }
     if (size > (int) sizeof(ret_buf)) {
+        napi_throw_error(env, NULL, "swift call failed");
         napi_throw_error(env, NULL, "swift call response buffer overflow");
         goto cleanup;
     }
@@ -167,28 +170,18 @@ printf("Stuffing ....%s\n", args_buf);
         ensure_throw(env);
         return NULL;
     }
-
     napi_threadsafe_function tsfn;
-    if (napi_create_threadsafe_function(
-        env,
-        NULL, // js func
-        NULL, // async resource
-        tsfn_label,
-        0, // maximum queue size (0 = no limit)
-        1, // initial thread count
-        NULL, // finalize data
-        NULL, // finalizer cb
-        deferred,
-        (napi_threadsafe_function_call_js) deferred_tsfn,
-        &tsfn) != napi_ok) {
+    napi_status r = napi_create_threadsafe_function(env, NULL, NULL, tsfn_label, /*max q size*/ 0,
+                                                    /*thread use cnt*/ 1, NULL, NULL, deferred,
+                                                    (napi_threadsafe_function_call_js) deferred_tsfn,
+                                                    &tsfn);
+    if (r != napi_ok) {
+        // XXX test
         free(args_buf);
         ensure_throw(env);
         return NULL;
     }
-
-    printf("args_buf: %s\n", args_buf);
     swift_call(args_buf, (int) args_len_nonull, tsfn, deferred_cb);
-
     free(args_buf);
     return promise;
 }

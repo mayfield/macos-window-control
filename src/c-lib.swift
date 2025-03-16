@@ -58,7 +58,6 @@ func objEncode(_ obj: Encodable, into: UnsafeMutablePointer<CChar>, size: CInt) 
 
 func objDecode<T: Decodable>(_ dataPtr: UnsafePointer<CChar>, size: CInt, type: T.Type = T.self) throws -> T {
     let data = Data(bytes: dataPtr, count: Int(size))
-    print("HUH", size, data.count, data[0], data[1], data[2])
     return try JSONDecoder().decode(type, from: data)
 }
 
