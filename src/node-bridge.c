@@ -23,6 +23,15 @@ typedef void (*swift_async_call_t)(const char *, int, const void *, const void *
     } while (0)
 
 
+static napi_value get_undefined(napi_env env) {
+    napi_value undefined;
+    if (napi_get_undefined(env, &undefined) != napi_ok) {
+        return NULL;
+    }
+    return undefined;
+}
+
+
 static void ensure_throw(napi_env env) {
     const napi_extended_error_info *error_info;
     napi_get_last_error_info(env, &error_info);
@@ -36,20 +45,33 @@ static void ensure_throw(napi_env env) {
 }
 
 
+static napi_status reject_deferred(napi_env env, napi_deferred deferred, const char *msg) {
+    napi_status status;
+    napi_value error_msg, error;
+    status = napi_create_string_utf8(env, msg, NAPI_AUTO_LENGTH, &error_msg);
+    if (status != napi_ok) {
+        return status;
+    }
+    status = napi_create_error(env, NULL, error_msg, &error);
+    if (status != napi_ok) {
+        return status;
+    }
+    return napi_reject_deferred(env, deferred, error);
+}
+
+
 // Runs in main thread..
 static void deferred_tsfn(napi_env env, napi_value _jscb, napi_deferred deferred, char *ret_json) {
     napi_value ret = NULL;
     if (ret_json == NULL) {
-        fprintf(stderr, "Ooops: Swift error\n"); // XXX remove after test..
-        napi_reject_deferred(env, deferred, NULL);
+        reject_deferred(env, deferred, "Swift interface error");
     } else {
         napi_status r = napi_create_string_utf8(env, ret_json, NAPI_AUTO_LENGTH, &ret);
         free(ret_json);
         if (r == napi_ok) {
             napi_resolve_deferred(env, deferred, ret);
         } else {
-            printf("Ooops: internal swift ret value error\n"); // remove after verify.
-            napi_reject_deferred(env, deferred, NULL);
+            reject_deferred(env, deferred, "Swift return value error");
         }
     }
 }
@@ -59,8 +81,8 @@ static void deferred_tsfn(napi_env env, napi_value _jscb, napi_deferred deferred
 static void deferred_cb(napi_threadsafe_function tsfn, char* ret_buf, int ret_size) {
     // ret_buf is allocated by swift, make a null terminated copy to be used later..
     char *ret_json = ret_size > 0 ? strndup(ret_buf, ret_size) : NULL;
-    napi_status r = napi_call_threadsafe_function(tsfn, ret_json, napi_tsfn_nonblocking);
-    napi_release_threadsafe_function(tsfn, napi_tsfn_release); // XXX comment out and see if we leak, it's just a bit ambiguous in the docs
+    napi_status r = napi_call_threadsafe_function(tsfn, ret_json, napi_tsfn_blocking);
+    napi_release_threadsafe_function(tsfn, napi_tsfn_release);
     if (r != napi_ok) {
         fprintf(stderr, "Failed to call thread safe function\n");
         return;
@@ -170,8 +192,8 @@ static napi_value swiftCallAsync(napi_env env, napi_callback_info info, swift_as
                                                     (napi_threadsafe_function_call_js) deferred_tsfn,
                                                     &tsfn);
     if (r != napi_ok) {
-        // XXX test
         free(args_buf);
+        napi_resolve_deferred(env, deferred, get_undefined(env));
         ensure_throw(env);
         return NULL;
     }

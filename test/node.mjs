@@ -7,19 +7,14 @@ test('hasAccessiblityPermission', () => {
 });
 
 test('getWindows', async () => {
-while (true) {
     const apps = mwc.getApps();
     const promises = [];
-    const start = Date.now();
     let count = 0;
     for (const x of apps) {
         const p = mwc.getWindows({app: {pid: x.pid}});
         promises.push(p.then(x => count += x.length));
     }
-    const t = Date.now();
     await Promise.all(promises);
-    //console.debug('all done', Date.now() - t, 'count', count);
-}
 });
 
 test('getZoom', () => {
@@ -157,7 +152,7 @@ test('activateWindow', async () => {
                 if (!win.title) {
                     continue;
                 }
-                console.debug(`Activating: ${appProp}:${app[appProp]}, ${win.title}`);
+                //console.debug(`Activating: ${appProp}:${app[appProp]}, ${win.title}`);
                 mwc.activateWindow({
                     app: {[appProp]: app[appProp]},
                     window: {title: win.title}
@@ -166,7 +161,7 @@ test('activateWindow', async () => {
         }
         for (const app of winApps) {
             for (const [index, win] of app.windows.entries()) {
-                console.debug(`Activating: ${appProp}:${app[appProp]}, window[${index}]`);
+                //console.debug(`Activating: ${appProp}:${app[appProp]}, window[${index}]`);
                 mwc.activateWindow({
                     app: {[appProp]: app[appProp]},
                     window: {index}
@@ -174,13 +169,13 @@ test('activateWindow', async () => {
             }
         }
         for (const app of winApps) {
-            console.debug(`Activating: ${appProp}:${app[appProp]} [MAIN Window]`);
+            //console.debug(`Activating: ${appProp}:${app[appProp]} [MAIN Window]`);
             mwc.activateWindow({
                 app: {[appProp]: app[appProp]},
             });
         }
         for (const app of winApps) {
-            console.debug(`Activating: ${appProp}:${app[appProp]} [MAIN Window]`);
+            //console.debug(`Activating: ${appProp}:${app[appProp]} [MAIN Window]`);
             mwc.activateWindow({
                 app: {[appProp]: app[appProp]},
                 window: {main: true}
