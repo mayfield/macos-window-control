@@ -5,17 +5,12 @@
 #include <string.h>
 #include <assert.h>
 #include <node_api.h>
-#include "../obj/mwc.h"
+#include "../obj/c-lib.swift.h"
 
 
-typedef struct deferred_cb_ctx {
-    napi_env env;
-    napi_deferred deferred;
-} deferred_cb_ctx_t;
-typedef void (*deferred_cb_t)(deferred_cb_ctx_t*, char*, int);
-typedef int (*swift_call_t)(const char*, int, char*, int);
-typedef int (*swift_call_noargs_t)(char*, int);
-typedef void (*swift_async_call_t)(const char*, int, const void*, const void*);
+typedef int (*swift_call_t)(const char *, int, char *, int);
+typedef int (*swift_call_noargs_t)(char *, int);
+typedef void (*swift_async_call_t)(const char *, int, const void *, const void *);
 
 
 // Basically everything in node_api uses this error handling conv...
@@ -41,25 +36,38 @@ static void ensure_throw(napi_env env) {
 }
 
 
-static void deferred_cb(struct deferred_cb_ctx *ctx, char* ret_buf, int ret_size) {
-    printf("FUCK ME< it workd? %p %p %d\n", ctx, ret_buf, ret_size);
-    // TBD: I'm not sure how errors thrown from here are handled (if at all). XXX
-    napi_deferred deferred = ctx->deferred;
-    napi_env env = ctx->env;
-    free(ctx);
+// Runs in main thread..
+static void deferred_tsfn(napi_env env, napi_value _jscb, napi_deferred deferred, char *ret_json) {
+    printf("OKAY DO IT\n");
     napi_value ret = NULL;
-    if (ret_size < 0) {
-        printf("Ooops: Swift error\n");
+    printf("OKAY DO IT %p %s\n", deferred, ret_json);
+    if (ret_json == NULL) {
+        fprintf(stderr, "Ooops: Swift error\n"); // XXX remove after test..
         napi_reject_deferred(env, deferred, NULL);
         return;
-    } else if (ret_size > 0) {
-        if (napi_create_string_utf8(env, ret_buf, ret_size, &ret) != napi_ok) {
-            printf("Ooops: internal swift ret value error\n");
-            napi_reject_deferred(env, deferred, NULL);
-            return;
-        }
+    } else if (napi_create_string_utf8(env, ret_json, NAPI_AUTO_LENGTH, &ret) != napi_ok) {
+        printf("Ooops: internal swift ret value error\n"); // remove after verify.
+        napi_reject_deferred(env, deferred, NULL);
+        return;
     }
     napi_resolve_deferred(env, deferred, ret);
+    printf("REsolved prommise, nowI'm outta here\n");
+}
+
+
+// Runs from outside main thread..
+static void deferred_cb(napi_threadsafe_function tsfn, char* ret_buf, int ret_size) {
+    printf("FUCK ME< it workd? %p %p %d\n", tsfn, ret_buf, ret_size);
+    // ret_buf is allocated by swift, make a null terminated copy to be used later..
+    char *ret_json = ret_size > 0 ? strndup(ret_buf, ret_size) : NULL;
+    printf("Blcoakin call into tsfn.... %s\n", ret_json);
+    napi_status r = napi_call_threadsafe_function(tsfn, ret_json, napi_tsfn_nonblocking);
+    printf("BACK FROM blockiung call into tsfn....%d\n", r);
+    napi_release_threadsafe_function(tsfn, napi_tsfn_release);
+    if (r != napi_ok) {
+        fprintf(stderr, "Failed to call thread safe function\n");
+        return;
+    }
 }
 
 
@@ -84,30 +92,30 @@ static napi_value swiftCall(napi_env env, napi_callback_info info, swift_call_t 
         napi_throw_type_error(env, NULL, "1 argument required");
         return NULL;
     }
-    size_t json_len_nonull;
-    char json_stack[0xffff] = {0};
-    size_t buf_len = sizeof(json_stack);
-    char *json_ptr = json_stack;
+    size_t args_len_nonull;
+    char args_stack[0xffff] = {0};
+    size_t args_buf_len = sizeof(args_stack);
+    char *args_buf = args_stack;
     // Get size only first...
-    NAPI_CALL(env, napi_get_value_string_utf8(env, args[0], NULL, 0, &json_len_nonull));
-    if (json_len_nonull >= sizeof(json_stack)) {
-        buf_len = json_len_nonull + 1;
-        json_ptr = malloc(buf_len);
-        if (json_ptr == NULL) {
+    NAPI_CALL(env, napi_get_value_string_utf8(env, args[0], NULL, 0, &args_len_nonull));
+    if (args_len_nonull >= sizeof(args_stack)) {
+        args_buf_len = args_len_nonull + 1;
+        args_buf = malloc(args_buf_len);
+        if (args_buf == NULL) {
             napi_throw_error(env, NULL, "malloc failed");
             return NULL;
         }
-        memset(json_ptr, 0, buf_len);
+        memset(args_buf, 0, args_buf_len);
     }
     // Though shalt not return from here on... (use cleanup)
     napi_value ret = NULL;
-    if (napi_get_value_string_utf8(env, args[0], json_ptr, buf_len, NULL) != napi_ok) {
+    if (napi_get_value_string_utf8(env, args[0], args_buf, args_buf_len, NULL) != napi_ok) {
         ensure_throw(env);
         goto cleanup;
     }
     char ret_buf[524288] = {0};
     int size;
-    if ((size = swift_call(json_ptr, (int) json_len_nonull, ret_buf, (int) sizeof(ret_buf))) <= 0) {
+    if ((size = swift_call(args_buf, (int) args_len_nonull, ret_buf, (int) sizeof(ret_buf))) <= 0) {
         napi_throw_error(env, NULL, "swift call failed");
         goto cleanup;
     }
@@ -115,16 +123,16 @@ static napi_value swiftCall(napi_env env, napi_callback_info info, swift_call_t 
         napi_throw_error(env, NULL, "swift call response buffer overflow");
         goto cleanup;
     }
-    napi_value json;
-    if (napi_create_string_utf8(env, ret_buf, size, &json) != napi_ok) {
+    napi_value ret_json;
+    if (napi_create_string_utf8(env, ret_buf, size, &ret_json) != napi_ok) {
         ensure_throw(env);
         goto cleanup;
     }
-    ret = json;
+    ret = ret_json;
 
 cleanup:
-    if (json_ptr != json_stack) {
-        free(json_ptr);
+    if (args_buf != args_stack) {
+        free(args_buf);
     }
     return ret;
 }
@@ -140,6 +148,8 @@ static napi_value swiftCallAsync(napi_env env, napi_callback_info info, swift_as
     }
     napi_deferred deferred;
     napi_value promise;
+    napi_value tsfn_label;
+    NAPI_CALL(env, napi_create_string_utf8(env, "DeferredSwiftCallback", NAPI_AUTO_LENGTH, &tsfn_label));
     NAPI_CALL(env, napi_create_promise(env, &deferred, &promise));
     size_t args_len_nonull;
     // Get size only first...
@@ -150,30 +160,34 @@ static napi_value swiftCallAsync(napi_env env, napi_callback_info info, swift_as
         napi_throw_error(env, NULL, "malloc failed");
         return NULL;
     }
-    // args_buf cleanup required from here on...
     memset(args_buf, 0, args_buf_len);
+printf("Stuffing ....%s\n", args_buf);
     if (napi_get_value_string_utf8(env, args[0], args_buf, args_buf_len, NULL) != napi_ok) {
         free(args_buf);
         ensure_throw(env);
         return NULL;
     }
-    struct deferred_cb_ctx *cb_ctx = malloc(sizeof(struct deferred_cb_ctx));
-    if (cb_ctx == NULL) {
+
+    napi_threadsafe_function tsfn;
+    if (napi_create_threadsafe_function(
+        env,
+        NULL, // js func
+        NULL, // async resource
+        tsfn_label,
+        0, // maximum queue size (0 = no limit)
+        1, // initial thread count
+        NULL, // finalize data
+        NULL, // finalizer cb
+        deferred,
+        (napi_threadsafe_function_call_js) deferred_tsfn,
+        &tsfn) != napi_ok) {
         free(args_buf);
-        napi_throw_error(env, NULL, "malloc failed");
+        ensure_throw(env);
         return NULL;
     }
-    // args_buf, cb_ctx cleanup required from here on...
-    memset(cb_ctx, 0, sizeof(struct deferred_cb_ctx));
-    cb_ctx->env = env;
-    cb_ctx->deferred = deferred;
 
-printf("okay do it!\n");
-printf("okay %p %d %p %p %p\n", args_buf, args_len_nonull, cb_ctx, deferred_cb, swift_call);
-    swift_call(args_buf, (int) args_len_nonull, cb_ctx, deferred_cb);
-printf("back!!!! goind to sleeep %d!\n", getpid());
-    sleep(10);
-printf("back from sleeep!\n");
+    printf("args_buf: %s\n", args_buf);
+    swift_call(args_buf, (int) args_len_nonull, tsfn, deferred_cb);
 
     free(args_buf);
     return promise;

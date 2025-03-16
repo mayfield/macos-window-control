@@ -3,7 +3,7 @@ SC_FLAGS := -O \
 	-warnings-as-errors
 C_LIB_FLAGS := -emit-library \
 	-Xcc -std=gnu++11 -cxx-interoperability-mode=default \
-	-emit-clang-header-path obj/mwc.h
+	-emit-clang-header-path obj/c-lib.swift.h
 CLI := macos-window-control
 
 SRCS := $(wildcard src/*)

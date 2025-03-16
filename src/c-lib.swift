@@ -58,6 +58,7 @@ func objEncode(_ obj: Encodable, into: UnsafeMutablePointer<CChar>, size: CInt) 
 
 func objDecode<T: Decodable>(_ dataPtr: UnsafePointer<CChar>, size: CInt, type: T.Type = T.self) throws -> T {
     let data = Data(bytes: dataPtr, count: Int(size))
+    print("HUH", size, data.count, data[0], data[1], data[2])
     return try JSONDecoder().decode(type, from: data)
 }
 
@@ -112,8 +113,8 @@ func wrapCallAsync(_ fnClosure: @escaping () async throws -> Encodable?,
         let raw: UnsafeRawPointer
     }
     let deferredCtxWrap = CtxWrap(raw: rawDeferredCtx)
-    DispatchQueue.global().async {
-        print("    inside dispatch queue ", getpid())
+    //DispatchQueue.global().async {
+     //   print("    inside dispatch queue ", getpid())
         Task {
             print("       inside task")
             do {
@@ -136,8 +137,8 @@ func wrapCallAsync(_ fnClosure: @escaping () async throws -> Encodable?,
                 print("Internal Error", e)
             }
         }
-        print("after Task.detached")
-    }
+       // print("after Task.detached")
+    //}
     print("after dispatch queue.detached")
 }
 
@@ -178,24 +179,14 @@ public func mwc_getApps(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
 @_cdecl("mwc_getWindows")
 public func mwc_getWindows(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
                            _ deferredCtx: UnsafeRawPointer, _ deferredCallbackRaw: UnsafeRawPointer) {
-    print("hello", argsPtr, argsSize, deferredCtx, deferredCallbackRaw)
-    print("hello", argsPtr, argsSize, deferredCtx, deferredCallbackRaw)
-    print("hello", argsPtr, argsSize, deferredCtx, deferredCallbackRaw)
-    print("hello", argsPtr, argsSize, deferredCtx, deferredCallbackRaw)
-    print("hello", argsPtr, argsSize, deferredCtx, String(describing: deferredCallbackRaw))
-    //Task {
-    //    print("hello there 2222")
-        wrapCallAsync({
-            print("hello there 3333")
-            struct Args: Decodable {
-                let app: AppIdentifier
-            }
-            let args: Args = try objDecode(argsPtr, size: argsSize)
-            print("args are good", args)
-            return try await getWindowDescs(args.app)
-        }, deferredCtx, deferredCallbackRaw)
-    //}
-    print("AFTER TASK...... hello", argsPtr, argsSize, deferredCtx, deferredCallbackRaw)
+    let argsData = Data(bytes: argsPtr, count: Int(argsSize)) // Must copy before yield!
+    wrapCallAsync({
+        struct Args: Decodable {
+            let app: AppIdentifier
+        }
+        let args = try JSONDecoder().decode(Args.self, from: argsData)
+        return try await getWindowDescs(args.app)
+    }, deferredCtx, deferredCallbackRaw)
 }
 
 
