@@ -38,9 +38,7 @@ static void ensure_throw(napi_env env) {
 
 // Runs in main thread..
 static void deferred_tsfn(napi_env env, napi_value _jscb, napi_deferred deferred, char *ret_json) {
-    printf("OKAY DO IT\n");
     napi_value ret = NULL;
-    printf("OKAY DO IT %p %s\n", deferred, ret_json);
     if (ret_json == NULL) {
         fprintf(stderr, "Ooops: Swift error\n"); // XXX remove after test..
         napi_reject_deferred(env, deferred, NULL);
@@ -59,12 +57,9 @@ static void deferred_tsfn(napi_env env, napi_value _jscb, napi_deferred deferred
 
 // Runs from outside main thread..
 static void deferred_cb(napi_threadsafe_function tsfn, char* ret_buf, int ret_size) {
-    printf("FUCK ME< it workd? %p %p %d\n", tsfn, ret_buf, ret_size);
     // ret_buf is allocated by swift, make a null terminated copy to be used later..
     char *ret_json = ret_size > 0 ? strndup(ret_buf, ret_size) : NULL;
-    printf("Blcoakin call into tsfn.... %s\n", ret_json);
     napi_status r = napi_call_threadsafe_function(tsfn, ret_json, napi_tsfn_nonblocking);
-    printf("BACK FROM blockiung call into tsfn....%d\n", r);
     napi_release_threadsafe_function(tsfn, napi_tsfn_release); // XXX comment out and see if we leak, it's just a bit ambiguous in the docs
     if (r != napi_ok) {
         fprintf(stderr, "Failed to call thread safe function\n");
@@ -164,7 +159,6 @@ static napi_value swiftCallAsync(napi_env env, napi_callback_info info, swift_as
         return NULL;
     }
     memset(args_buf, 0, args_buf_len);
-printf("Stuffing ....%s\n", args_buf);
     if (napi_get_value_string_utf8(env, args[0], args_buf, args_buf_len, NULL) != napi_ok) {
         free(args_buf);
         ensure_throw(env);

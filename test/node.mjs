@@ -7,13 +7,19 @@ test('hasAccessiblityPermission', () => {
 });
 
 test('getWindows', async () => {
+while (true) {
+    const apps = mwc.getApps();
     const promises = [];
-    for (let i = 0; i < 10; i++) {
-        const p = mwc.getWindows({app: {name: "Terminal"}});
-        promises.push(p);
-        console.log("p", p);
+    const start = Date.now();
+    let count = 0;
+    for (const x of apps) {
+        const p = mwc.getWindows({app: {pid: x.pid}});
+        promises.push(p.then(x => count += x.length));
     }
-    console.log('all of them...', await Promise.all(promises));
+    const t = Date.now();
+    await Promise.all(promises);
+    //console.debug('all done', Date.now() - t, 'count', count);
+}
 });
 
 test('getZoom', () => {
@@ -139,9 +145,12 @@ test('getApps', () => {
     assert(r.every(x => typeof x.pid === 'number'));
 });
 
-test('activateWindow', () => {
-    return; // Finish getWindows work
-    const winApps = mwc.getApps().filter(x => x.windows.length && x.name !== 'Finder');
+test('activateWindow', async () => {
+    let winApps = mwc.getApps().filter(x => x.name !== 'Finder');
+    await Promise.all(winApps.map(async app => {
+        app.windows = await mwc.getWindows({app: {pid: app.pid}});
+    }));
+    winApps = winApps.filter(x => x.windows.length);
     for (const appProp of ['name', 'pid']) {
         for (const app of winApps) {
             for (const win of app.windows) {
@@ -182,7 +191,6 @@ test('activateWindow', () => {
 });
 
 test('spiral', async () => {
-    return 'XXX';
     const [width, height] = mwc.getMainScreenSize();
     const circleSize = (Math.min(width, height) / 2) * 0.5;
     const fps = 60;

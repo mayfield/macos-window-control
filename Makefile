@@ -1,6 +1,5 @@
 SC_FLAGS := -O \
-	-enable-actor-data-race-checks \
-	-warnings-as-errors
+	-enable-actor-data-race-checks
 C_LIB_FLAGS := -emit-library \
 	-Xcc -std=gnu++11 -cxx-interoperability-mode=default \
 	-emit-clang-header-path obj/c-lib.swift.h

@@ -105,40 +105,29 @@ func wrapCall(_ fnClosure: () throws -> Encodable?, _ outPtr: UnsafeMutablePoint
 
 func wrapCallAsync(_ fnClosure: @escaping () async throws -> Encodable?,
                    _ rawDeferredCtx: UnsafeRawPointer, _ rawDeferredCallback: UnsafeRawPointer) {
-    print("  outside task", getpid())
     let deferredCallback = unsafeBitCast(rawDeferredCallback, to: DeferredCallback.self)
     // Swift 6 requires this evil hack..
     struct CtxWrap: @unchecked Sendable {
         let raw: UnsafeRawPointer
     }
     let deferredCtxWrap = CtxWrap(raw: rawDeferredCtx)
-    //DispatchQueue.global().async {
-     //   print("    inside dispatch queue ", getpid())
-        Task {
-            print("       inside task")
+    Task {
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .sortedKeys
+            var data: Data
             do {
-                print("starttit  XXX")
-                let encoder = JSONEncoder()
-                encoder.outputFormatting = .sortedKeys
-                var data: Data
-                do {
-                    data = try encoder.encode(wrapSuccess(try await fnClosure()))
-                } catch let e {
-                    data = try encoder.encode(wrapError(e))
-                }
-                print("back from async, ready to call back to node deferred callbavck XXX", data)
-                data.withUnsafeBytes { (p: UnsafeRawBufferPointer) in
-                    deferredCallback(deferredCtxWrap.raw, p.baseAddress!, CInt(data.count))
-                    print("did it work???????...", data)
-                }
-                print("DIDI I DIE??????")
+                data = try encoder.encode(wrapSuccess(try await fnClosure()))
             } catch let e {
-                print("Internal Error", e)
+                data = try encoder.encode(wrapError(e))
             }
+            data.withUnsafeBytes { (p: UnsafeRawBufferPointer) in
+                deferredCallback(deferredCtxWrap.raw, p.baseAddress!, CInt(data.count))
+            }
+        } catch let e {
+            print("Internal Error", e)
         }
-       // print("after Task.detached")
-    //}
-    print("after dispatch queue.detached")
+    }
 }
 
 
