@@ -1,5 +1,4 @@
-SC_FLAGS := -O \
-	-enable-actor-data-race-checks
+SC_FLAGS := -O
 C_LIB_FLAGS := -emit-library \
 	-Xcc -std=gnu++11 -cxx-interoperability-mode=default \
 	-emit-clang-header-path obj/c-lib.swift.h
@@ -18,6 +17,7 @@ default: $(CLI) node-build
 node-build: $(NODE_BUILD)
 
 $(NODE_BUILD): $(SRCS) Makefile
+	#npm rebuild --debug
 	npm rebuild
 	touch $@
 

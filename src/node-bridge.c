@@ -8,6 +8,11 @@
 #include "../obj/c-lib.swift.h"
 
 
+typedef struct deferred_tsfn_ctx {
+    napi_deferred deferred;
+    napi_threadsafe_function tsfn;
+} deferred_tsfn_ctx_t;
+
 typedef int (*swift_call_t)(const char *, int, char *, int);
 typedef int (*swift_call_noargs_t)(char *, int);
 typedef void (*swift_async_call_t)(const char *, int, const void *, const void *);
@@ -61,31 +66,43 @@ static napi_status reject_deferred(napi_env env, napi_deferred deferred, const c
 
 
 // Runs in main thread..
-static void deferred_tsfn(napi_env env, napi_value _jscb, napi_deferred deferred, char *ret_json) {
-    napi_value ret = NULL;
-    if (ret_json == NULL) {
-        reject_deferred(env, deferred, "Swift interface error");
+static void deferred_tsfn(napi_env env, napi_value _jscb, deferred_tsfn_ctx_t *ctx, char *ret_json) {
+    if (ctx == NULL) {
+        napi_fatal_error("deferred_tsfn", NAPI_AUTO_LENGTH,
+                         "Internal threadsafe func error", NAPI_AUTO_LENGTH);
+        // ^^^ exits
+    }
+    if (napi_release_threadsafe_function(ctx->tsfn, napi_tsfn_release) != napi_ok) {
+        reject_deferred(env, ctx->deferred, "NAPI threadsafe func release failed");
+    } else if (ret_json == NULL) {
+        reject_deferred(env, ctx->deferred, "Swift call empty response error");
     } else {
-        napi_status r = napi_create_string_utf8(env, ret_json, NAPI_AUTO_LENGTH, &ret);
-        free(ret_json);
-        if (r == napi_ok) {
-            napi_resolve_deferred(env, deferred, ret);
+        napi_value ret;
+        if (napi_create_string_utf8(env, ret_json, NAPI_AUTO_LENGTH, &ret) != napi_ok) {
+            reject_deferred(env, ctx->deferred, "Swift return string value error");
         } else {
-            reject_deferred(env, deferred, "Swift return value error");
+            napi_resolve_deferred(env, ctx->deferred, ret);
         }
+    }
+    if (ret_json != NULL) {
+        free(ret_json);
+    }
+    if (ctx != NULL) {
+        free(ctx);
     }
 }
 
 
-// Runs from outside main thread..
-static void deferred_cb(napi_threadsafe_function tsfn, char* ret_buf, int ret_size) {
-    // ret_buf is allocated by swift, make a null terminated copy to be used later..
+// Runs from any thread..
+static void deferred_cb(deferred_tsfn_ctx_t *ctx, char* ret_buf, int ret_size) {
+    // ret_buf is allocated by swift (stack); make a null terminated copy to be used in MainThread
     char *ret_json = ret_size > 0 ? strndup(ret_buf, ret_size) : NULL;
-    napi_status r = napi_call_threadsafe_function(tsfn, ret_json, napi_tsfn_blocking);
-    napi_release_threadsafe_function(tsfn, napi_tsfn_release);
-    if (r != napi_ok) {
-        fprintf(stderr, "Failed to call thread safe function\n");
-        return;
+    if (napi_call_threadsafe_function(ctx->tsfn, ret_json, /*enqueue*/ napi_tsfn_blocking) != napi_ok) {
+        if (ret_json != NULL) {
+            free(ret_json);
+        }
+        napi_fatal_error("deferred_cb", NAPI_AUTO_LENGTH,
+                         "Internal deferred callback error", NAPI_AUTO_LENGTH);
     }
 }
 
@@ -161,45 +178,66 @@ cleanup:
 static napi_value swiftCallAsync(napi_env env, napi_callback_info info, swift_async_call_t swift_call) {
     size_t argc = 1;
     napi_value args[1];
+    char *args_buf = NULL;
+    deferred_tsfn_ctx_t *ctx = NULL;
     NAPI_CALL(env, napi_get_cb_info(env, info, &argc, args, NULL, NULL));
     if (argc != 1) {
         napi_throw_type_error(env, NULL, "1 argument required");
         return NULL;
     }
-    napi_deferred deferred;
-    napi_value promise;
-    napi_value tsfn_label;
-    NAPI_CALL(env, napi_create_string_utf8(env, "DeferredSwiftCallback", NAPI_AUTO_LENGTH, &tsfn_label));
-    NAPI_CALL(env, napi_create_promise(env, &deferred, &promise));
+    // No NAPI_CALL from here down and use error label branch...
+
     size_t args_len_nonull;
     // Get size only first...
-    NAPI_CALL(env, napi_get_value_string_utf8(env, args[0], NULL, 0, &args_len_nonull));
+    if (napi_get_value_string_utf8(env, args[0], NULL, 0, &args_len_nonull) != napi_ok) {
+        goto error;
+    }
     size_t args_buf_len = args_len_nonull + 1;
-    char *args_buf = malloc(args_buf_len);
+    args_buf = malloc(args_buf_len);
     if (args_buf == NULL) {
         napi_throw_error(env, NULL, "malloc failed");
-        return NULL;
+        goto error;
     }
     memset(args_buf, 0, args_buf_len);
     if (napi_get_value_string_utf8(env, args[0], args_buf, args_buf_len, NULL) != napi_ok) {
-        free(args_buf);
-        ensure_throw(env);
-        return NULL;
+        goto error;
     }
-    napi_threadsafe_function tsfn;
-    napi_status r = napi_create_threadsafe_function(env, NULL, NULL, tsfn_label, /*max q size*/ 0,
-                                                    /*thread use cnt*/ 1, NULL, NULL, deferred,
-                                                    (napi_threadsafe_function_call_js) deferred_tsfn,
-                                                    &tsfn);
-    if (r != napi_ok) {
-        free(args_buf);
-        napi_resolve_deferred(env, deferred, get_undefined(env));
-        ensure_throw(env);
-        return NULL;
+
+    ctx = malloc(sizeof(deferred_tsfn_ctx_t));
+    if (ctx == NULL) {
+        napi_throw_error(env, NULL, "malloc failed");
+        goto error;
     }
-    swift_call(args_buf, (int) args_len_nonull, tsfn, deferred_cb);
+    memset(ctx, 0, sizeof(deferred_tsfn_ctx_t));
+    napi_value promise;
+    napi_value tsfn_label;
+    if (napi_create_promise(env, &(ctx->deferred), &promise) != napi_ok ||
+        napi_create_string_utf8(env, "DeferredSwiftCallback", NAPI_AUTO_LENGTH, &tsfn_label) != napi_ok ||
+        napi_create_threadsafe_function(env, NULL, NULL, tsfn_label, /*max q size*/ 0,
+                                        /*thread use cnt*/ 1, NULL, NULL, ctx,
+                                        (napi_threadsafe_function_call_js) deferred_tsfn,
+                                        &(ctx->tsfn)) != napi_ok) {
+        goto error;
+    }
+    swift_call(args_buf, (int) args_len_nonull, ctx, deferred_cb);
     free(args_buf);
     return promise;
+
+error:
+    if (ctx != NULL) {
+        if (ctx->deferred != NULL) {
+            napi_resolve_deferred(env, ctx->deferred, get_undefined(env));
+        }
+        if (ctx->tsfn != NULL) {
+            napi_release_threadsafe_function(ctx->tsfn, napi_tsfn_abort);
+        }
+        free(ctx);
+    }
+    if (args_buf != NULL) {
+        free(args_buf);
+    }
+    ensure_throw(env);
+    return NULL;
 }
 
 
@@ -251,7 +289,6 @@ static napi_value getZoom(napi_env env, napi_callback_info info) {
 static napi_value setZoom(napi_env env, napi_callback_info info) {
     return swiftCall(env, info, mwc_setZoom);
 }
-
 
 
 static napi_value Init(napi_env env, napi_value exports) {

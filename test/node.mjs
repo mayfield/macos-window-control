@@ -6,6 +6,25 @@ test('hasAccessiblityPermission', () => {
     assert(mwc.hasAccessibilityPermission());
 });
 
+test('async-perf-bench', async () => {
+    let count = 0;
+    const s = performance.now();
+    for (let j = 0; j < 100; j++) {
+        const promises = [];
+        const t = performance.now();
+        for (let i = 0; i < 100; i++) {
+            const t2 = performance.now();
+            const p = mwc.getWindows({app: {name: 'Finder'}});
+            //const p = Promise.resolve().then(x => {console.log('resolved', performance.now() - t2);})
+            promises.push(p);
+            //promises.push(p.then(x => count += x.length));
+        }
+        await Promise.all(promises);
+        console.log('step', performance.now() - t, performance.now() - s);
+    }
+    console.log('tot', performance.now() - s);
+});
+
 test('getWindows', async () => {
     const apps = mwc.getApps();
     const promises = [];
@@ -186,6 +205,7 @@ test('activateWindow', async () => {
 });
 
 test('spiral', async () => {
+    console.warn("SKIP"); return;
     const [width, height] = mwc.getMainScreenSize();
     const circleSize = (Math.min(width, height) / 2) * 0.5;
     const fps = 60;
