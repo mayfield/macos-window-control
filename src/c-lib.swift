@@ -103,21 +103,21 @@ func wrapCall(_ fnClosure: () throws -> Encodable?, _ outPtr: UnsafeMutablePoint
 }
 
 
-func wrapCallAsync(_ fnClosure: @escaping () async throws -> Encodable?,
-                   _ rawDeferredCtx: UnsafeRawPointer, _ rawDeferredCallback: UnsafeRawPointer) {
+func wrapCallDeferred(_ fnClosure: @escaping () throws -> Encodable?,
+                      _ rawDeferredCtx: UnsafeRawPointer, _ rawDeferredCallback: UnsafeRawPointer) {
     let deferredCallback = unsafeBitCast(rawDeferredCallback, to: DeferredCallback.self)
     // Swift 6 requires this evil hack..
     struct CtxWrap: @unchecked Sendable {
         let raw: UnsafeRawPointer
     }
     let deferredCtxWrap = CtxWrap(raw: rawDeferredCtx)
-    Task {
+    DispatchQueue.global(qos: .userInteractive).async {
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .sortedKeys
             var data: Data
             do {
-                data = try encoder.encode(wrapSuccess(try await fnClosure()))
+                data = try encoder.encode(wrapSuccess(try fnClosure()))
             } catch let e {
                 data = try encoder.encode(wrapError(e))
             }
@@ -140,10 +140,11 @@ public func mwc_hasAccessibilityPermission(_ outPtr: UnsafeMutablePointer<CChar>
 
 
 @_cdecl("mwc_getMainScreenSize")
-public func mwc_getMainScreenSize(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
-    return wrapCall({
+public func mwc_getMainScreenSize(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
+                                  _ deferredCtx: UnsafeRawPointer, _ deferredCallbackRaw: UnsafeRawPointer) {
+    wrapCallDeferred({
         return try getMainScreenSize()
-    }, outPtr, outSize)
+    }, deferredCtx, deferredCallbackRaw)
 }
 
 
@@ -157,10 +158,10 @@ public func mwc_getMenuBarHeight(_ outPtr: UnsafeMutablePointer<CChar>, _ outSiz
 
 @_cdecl("mwc_getApps")
 public func mwc_getApps(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
-                        _ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
-    return wrapCall({
+                        _ deferredCtx: UnsafeRawPointer, _ deferredCallbackRaw: UnsafeRawPointer) {
+    wrapCallDeferred({
         return try getAppDescs()
-    }, outPtr, outSize)
+    }, deferredCtx, deferredCallbackRaw)
 }
 
 
@@ -168,12 +169,12 @@ public func mwc_getApps(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
 public func mwc_getWindows(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
                            _ deferredCtx: UnsafeRawPointer, _ deferredCallbackRaw: UnsafeRawPointer) {
     let argsData = Data(bytes: argsPtr, count: Int(argsSize)) // Must copy before yield!
-    wrapCallAsync({
+    wrapCallDeferred({
         struct Args: Decodable {
             let app: AppIdentifier
         }
         let args = try JSONDecoder().decode(Args.self, from: argsData)
-        return try await getWindowDescs(args.app)
+        return try getWindowDescs(args.app)
     }, deferredCtx, deferredCallbackRaw)
 }
 
@@ -213,8 +214,10 @@ public func mwc_setWindowSize(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
 @_cdecl("mwc_activateWindow")
 public func mwc_activateWindow(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
                                _ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+    // NOTE: Even though this is rather slow, running off main-thread causes macos to throttle heavily.
+    let argsData = Data(bytes: argsPtr, count: Int(argsSize)) // Must copy before yield!
     return wrapCall({
-        let ident: AppWindowIdentifier = try objDecode(argsPtr, size: argsSize)
+        let ident = try JSONDecoder().decode(AppWindowIdentifier.self, from: argsData)
         try activateWindow(ident.app, ident.window)
         return nil
     }, outPtr, outSize)

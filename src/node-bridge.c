@@ -175,7 +175,7 @@ cleanup:
 }
 
 
-static napi_value swiftCallAsync(napi_env env, napi_callback_info info, swift_async_call_t swift_call) {
+static napi_value swiftCallDeferred(napi_env env, napi_callback_info info, swift_async_call_t swift_call) {
     size_t argc = 1;
     napi_value args[1];
     char *args_buf = NULL;
@@ -247,7 +247,7 @@ static napi_value hasAccessibilityPermission(napi_env env, napi_callback_info in
 
 
 static napi_value getMainScreenSize(napi_env env, napi_callback_info info) {
-    return swiftCallNoArgs(env, mwc_getMainScreenSize);
+    return swiftCallDeferred(env, info, mwc_getMainScreenSize);
 }
 
 
@@ -257,12 +257,12 @@ static napi_value getMenuBarHeight(napi_env env, napi_callback_info info) {
 
 
 static napi_value getApps(napi_env env, napi_callback_info info) {
-    return swiftCall(env, info, mwc_getApps);
+    return swiftCallDeferred(env, info, mwc_getApps);
 }
 
 
 static napi_value getWindows(napi_env env, napi_callback_info info) {
-    return swiftCallAsync(env, info, mwc_getWindows);
+    return swiftCallDeferred(env, info, mwc_getWindows);
 }
 
 

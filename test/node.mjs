@@ -7,26 +7,18 @@ test('hasAccessiblityPermission', () => {
 });
 
 test('async-perf-bench', async () => {
-    let count = 0;
-    const s = performance.now();
-    for (let j = 0; j < 100; j++) {
+    for (let j = 0; j < 10; j++) {
         const promises = [];
-        const t = performance.now();
         for (let i = 0; i < 100; i++) {
-            const t2 = performance.now();
             const p = mwc.getWindows({app: {name: 'Finder'}});
-            //const p = Promise.resolve().then(x => {console.log('resolved', performance.now() - t2);})
             promises.push(p);
-            //promises.push(p.then(x => count += x.length));
         }
         await Promise.all(promises);
-        console.log('step', performance.now() - t, performance.now() - s);
     }
-    console.log('tot', performance.now() - s);
 });
 
 test('getWindows', async () => {
-    const apps = mwc.getApps();
+    const apps = await mwc.getApps();
     const promises = [];
     let count = 0;
     for (const x of apps) {
@@ -115,8 +107,8 @@ test('setZoom-bad-args', () => {
     }
 });
 
-test('getMainScreenSize', () => {
-    const r = mwc.getMainScreenSize();
+test('getMainScreenSize', async () => {
+    const r = await mwc.getMainScreenSize();
     assert(Array.isArray(r));
     assert.strictEqual(r.length, 2);
     assert(r.every(x => typeof x === 'number'));
@@ -150,8 +142,8 @@ test('getWindowSize-bad-args', () => {
     assert.throws(() => mwc.getWindowSize({app: {pid: -100}, window: {}}), mwc.ValidationError);
 });
 
-test('getApps', () => {
-    const r = mwc.getApps();
+test('getApps', async () => {
+    const r = await mwc.getApps();
     //console.dir(r, {depth: 1000});
     assert(Array.isArray(r));
     assert(r.every(x => typeof x === 'object'));
@@ -160,7 +152,7 @@ test('getApps', () => {
 });
 
 test('activateWindow', async () => {
-    let winApps = mwc.getApps().filter(x => x.name !== 'Finder');
+    let winApps = (await mwc.getApps()).filter(x => x.name !== 'Finder');
     await Promise.all(winApps.map(async app => {
         app.windows = await mwc.getWindows({app: {pid: app.pid}});
     }));
@@ -205,8 +197,8 @@ test('activateWindow', async () => {
 });
 
 test('spiral', async () => {
-    console.warn("SKIP"); return;
-    const [width, height] = mwc.getMainScreenSize();
+    //console.warn("SKIP"); return;
+    const [width, height] = await mwc.getMainScreenSize();
     const circleSize = (Math.min(width, height) / 2) * 0.5;
     const fps = 60;
     const zoomTime = 0.5;

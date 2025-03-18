@@ -44,8 +44,8 @@ function _unwrapResp(rawResp) {
 
 
 function wrap(fn) {
-    const wrapped = function(arg={}) {
-        const rawResp = fn(JSON.stringify(arg));
+    const wrapped = function(arg) {
+        const rawResp = fn(arg !== undefined ? JSON.stringify(arg) : '{}');
         if (rawResp instanceof Promise) {
             return rawResp.then(_unwrapResp);
         } else {

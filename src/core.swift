@@ -517,27 +517,22 @@ func getWindowDesc(_ winEl: AXUIElement, focused: Bool? = nil) -> WindowDesc {
 }
 
 
-func getWindowDescs(_ appIdent: AppIdentifier) async throws -> [WindowDesc] {
+func getWindowDescs(_ appIdent: AppIdentifier) throws -> [WindowDesc] {
     try validateAppWindowQuery(appIdent)
     if !hasAccessibilityPermission() {
         throw AXPermError()
     }
     let app = try getApp(appIdent)
-    let pid = app.processIdentifier
-    return await withCheckedContinuation { cont in
-        DispatchQueue.global().async {
-            let appEl = AXUIElementCreateApplication(pid)
-            var windows: [WindowDesc] = []
-            if let windowEls: [AXUIElement] = getAXUIAttr(appEl, kAXWindowsAttribute),
-               windowEls.count > 0 {
-                let focusedWindowEl: AXUIElement? = app.isActive ? getAXUIAttr(appEl, kAXFocusedWindowAttribute) : nil
-                for winEl in windowEls {
-                    windows.append(getWindowDesc(winEl, focused: winEl == focusedWindowEl))
-                }
-            }
-            cont.resume(returning: windows)
+    let appEl = AXUIElementCreateApplication(app.processIdentifier)
+    var windows: [WindowDesc] = []
+    if let windowEls: [AXUIElement] = getAXUIAttr(appEl, kAXWindowsAttribute),
+       windowEls.count > 0 {
+        let focusedWindowEl: AXUIElement? = app.isActive ? getAXUIAttr(appEl, kAXFocusedWindowAttribute) : nil
+        for winEl in windowEls {
+            windows.append(getWindowDesc(winEl, focused: winEl == focusedWindowEl))
         }
     }
+    return windows
 }
 
 
@@ -553,8 +548,8 @@ func activateWindow(_ appIdent: AppIdentifier, _ winIdent: WindowIdentifier? = n
     app.activate()
     let res = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
     if res != .success {
-        throw MWCError("Failed to raise window: \(res.rawValue)")
-        //try setAXUIAttr(window, kAXMainAttribute, kCFBooleanTrue)
+        try setAXUIAttr(window, kAXMainAttribute, kCFBooleanTrue)
+        //throw MWCError("Failed to raise window: \(res.rawValue)")
     }
 }
 
