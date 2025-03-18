@@ -2,7 +2,7 @@
   "name": "macos-window-control",
   "license": "MIT",
   "author": "Justin Mayfield",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Control windows and zoom on a Mac",
   "main": "js/index.mjs",
   "gypfile": true,
