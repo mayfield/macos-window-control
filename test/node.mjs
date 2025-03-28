@@ -34,8 +34,9 @@ test('getZoom', () => {
     assert.strictEqual(typeof r.scale, 'number');
     assert.strictEqual(typeof r.smooth, 'boolean');
     assert.strictEqual(typeof r.center, 'object');
-    assert.strictEqual(typeof r.center.x, 'number');
-    assert.strictEqual(typeof r.center.y, 'number');
+    assert(Array.isArray(r.center));
+    assert.strictEqual(typeof r.center[0], 'number');
+    assert.strictEqual(typeof r.center[1], 'number');
 });
 
 test('getZoom-noop-args', () => {

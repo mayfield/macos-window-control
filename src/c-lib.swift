@@ -230,10 +230,10 @@ public func mwc_getZoom(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) 
         let (scale, center, smooth) = try getZoom()
         struct Resp: Encodable {
             let scale: Double
+            let center: CGPoint
             let smooth: Bool
-            let center: [String: Double]
         }
-        return Resp(scale: scale, smooth: smooth, center: ["x": center.x, "y": center.y])
+        return Resp(scale: scale, center: center, smooth: smooth)
     }, outPtr, outSize)
 }
 
