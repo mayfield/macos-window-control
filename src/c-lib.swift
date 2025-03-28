@@ -36,6 +36,12 @@ struct ErrorResp: Encodable {
 }
 
 
+struct ScreenSize: Encodable {
+    let origin: CGPoint
+    let size: CGSize
+}
+
+
 struct AppWindowIdentifier: Codable {
     var app: AppIdentifier
     var window: WindowIdentifier? = nil
@@ -140,11 +146,37 @@ public func mwc_hasAccessibilityPermission(_ outPtr: UnsafeMutablePointer<CChar>
 
 
 @_cdecl("mwc_getMainScreenSize")
-public func mwc_getMainScreenSize(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
-                                  _ deferredCtx: UnsafeRawPointer, _ deferredCallbackRaw: UnsafeRawPointer) {
-    wrapCallDeferred({
-        return try getMainScreenSize()
-    }, deferredCtx, deferredCallbackRaw)
+public func mwc_getMainScreenSize(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+    return wrapCall({
+        let rect = try getMainScreenSize()
+        return [
+            "size": [rect.size.width, rect.size.height],
+            "position": [rect.origin.x, rect.origin.y],
+        ]
+    }, outPtr, outSize)
+}
+
+
+@_cdecl("mwc_getActiveScreenSize")
+public func mwc_getActiveScreenSize(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+    return wrapCall({
+        let rect = try getActiveScreenSize()
+        return [
+            "size": [rect.size.width, rect.size.height],
+            "position": [rect.origin.x, rect.origin.y],
+        ]
+    }, outPtr, outSize)
+}
+
+
+@_cdecl("mwc_getScreenSizes")
+public func mwc_getScreenSizes(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+    return wrapCall({
+        return getScreenSizes().map({[
+            "size": [$0.size.width, $0.size.height],
+            "position": [$0.origin.x, $0.origin.y],
+        ]})
+    }, outPtr, outSize)
 }
 
 

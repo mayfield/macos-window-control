@@ -247,7 +247,17 @@ static napi_value hasAccessibilityPermission(napi_env env, napi_callback_info in
 
 
 static napi_value getMainScreenSize(napi_env env, napi_callback_info info) {
-    return swiftCallDeferred(env, info, mwc_getMainScreenSize);
+    return swiftCallNoArgs(env, mwc_getMainScreenSize);
+}
+
+
+static napi_value getActiveScreenSize(napi_env env, napi_callback_info info) {
+    return swiftCallNoArgs(env, mwc_getActiveScreenSize);
+}
+
+
+static napi_value getScreenSizes(napi_env env, napi_callback_info info) {
+    return swiftCallNoArgs(env, mwc_getScreenSizes);
 }
 
 
@@ -300,6 +310,8 @@ static napi_value Init(napi_env env, napi_value exports) {
         } while (0)
     ADD_FUNC(hasAccessibilityPermission);
     ADD_FUNC(getMainScreenSize);
+    ADD_FUNC(getActiveScreenSize);
+    ADD_FUNC(getScreenSizes);
     ADD_FUNC(getMenuBarHeight);
     ADD_FUNC(getApps);
     ADD_FUNC(getWindows);

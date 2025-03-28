@@ -92,6 +92,22 @@ struct WindowIdentifier: Codable {
 }
 
 
+func getActiveScreen() -> NSScreen? {
+    // That's right, .main is actually the active screen (screen of focused app)
+    return NSScreen.main
+}
+
+
+func getMainScreen() -> NSScreen? {
+    // Do not use `main`.  Mac os always puts the "main" screen at index 0
+    if NSScreen.screens.count > 0 {
+        return NSScreen.screens[0]
+    } else {
+        return nil
+    }
+}
+
+
 var _coreGraphicsConnId: Int? = nil
 func getCGSConnectionID() throws -> Int {
     if _coreGraphicsConnId == nil {
@@ -444,16 +460,29 @@ func hasAccessibilityPermission() -> Bool {
 }
 
 
-func getMainScreenSize() throws -> CGSize {
-    guard let screen = NSScreen.main else {
+func getMainScreenSize() throws -> CGRect {
+    guard let screen = getMainScreen() else {
         throw MWCError("Main screen unavailable")
     }
-    return CGSize(width: screen.frame.width, height: screen.frame.height)
+    return screen.frame
+}
+
+
+func getActiveScreenSize() throws -> CGRect {
+    guard let screen = getActiveScreen() else {
+        throw MWCError("Active screen unavailable")
+    }
+    return screen.frame
+}
+
+
+func getScreenSizes() -> [CGRect] {
+    return NSScreen.screens.map({$0.frame})
 }
 
 
 func getMenuBarHeight() throws -> Double {
-    guard let screen = NSScreen.main else {
+    guard let screen = getMainScreen() else {
         throw MWCError("Main screen unavailable")
     }
     return screen.frame.height - screen.visibleFrame.height
@@ -461,7 +490,7 @@ func getMenuBarHeight() throws -> Double {
 
 
 func getWindowSize(_ appIdent: AppIdentifier) throws -> CGRect {
-    return try getWindowSize( appIdent, nil);
+    return try getWindowSize(appIdent, nil);
 }
 
 

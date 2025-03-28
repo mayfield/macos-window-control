@@ -108,11 +108,37 @@ test('setZoom-bad-args', () => {
     }
 });
 
-test('getMainScreenSize', async () => {
-    const r = await mwc.getMainScreenSize();
-    assert(Array.isArray(r));
-    assert.strictEqual(r.length, 2);
-    assert(r.every(x => typeof x === 'number'));
+test('getMainScreenSize', () => {
+    const r = mwc.getMainScreenSize();
+    assert(Array.isArray(r.size));
+    assert(Array.isArray(r.position));
+    assert.strictEqual(r.size.length, 2);
+    assert.strictEqual(r.position.length, 2);
+    assert(r.size.every(x => typeof x === 'number'));
+    assert(r.position.every(x => typeof x === 'number'));
+});
+
+test('getActiveScreenSize', () => {
+    const r = mwc.getActiveScreenSize();
+    assert(Array.isArray(r.size));
+    assert(Array.isArray(r.position));
+    assert.strictEqual(r.size.length, 2);
+    assert.strictEqual(r.position.length, 2);
+    assert(r.size.every(x => typeof x === 'number'));
+    assert(r.position.every(x => typeof x === 'number'));
+});
+
+test('getScreenSizes', () => {
+    const rArr = mwc.getScreenSizes();
+    assert(Array.isArray(rArr));
+    for (const r of rArr) {
+        assert(Array.isArray(r.size));
+        assert(Array.isArray(r.position));
+        assert.strictEqual(r.size.length, 2);
+        assert.strictEqual(r.position.length, 2);
+        assert(r.size.every(x => typeof x === 'number'));
+        assert(r.position.every(x => typeof x === 'number'));
+    }
 });
 
 test('getMenuBarHeight', () => {
@@ -199,7 +225,7 @@ test('activateWindow', async () => {
 
 test('spiral', async () => {
     //console.warn("SKIP"); return;
-    const [width, height] = await mwc.getMainScreenSize();
+    const {size: [width, height]} = mwc.getMainScreenSize();
     const circleSize = (Math.min(width, height) / 2) * 0.5;
     const fps = 60;
     const zoomTime = 0.5;
