@@ -17,6 +17,8 @@ typedef int (*swift_call_t)(const char *, int, char *, int);
 typedef int (*swift_call_noargs_t)(char *, int);
 typedef void (*swift_async_call_t)(const char *, int, const void *, const void *);
 
+static sig_atomic_t g_loaded = 0;
+
 
 // Basically everything in node_api uses this error handling conv...
 #define NAPI_CALL(env, the_call)                                   \
@@ -95,6 +97,10 @@ static void deferred_tsfn(napi_env env, napi_value _jscb, deferred_tsfn_ctx_t *c
 
 // Runs from any thread..
 static void deferred_cb(deferred_tsfn_ctx_t *ctx, char* ret_buf, int ret_size) {
+    if (!g_loaded) {
+        printf("Ignoring deferred callback: mwc module is unloaded\n");
+        return;
+    }
     // ret_buf is allocated by swift (stack); make a null terminated copy to be used in MainThread
     char *ret_json = ret_size > 0 ? strndup(ret_buf, ret_size) : NULL;
     if (napi_call_threadsafe_function(ctx->tsfn, ret_json, /*enqueue*/ napi_tsfn_blocking) != napi_ok) {
@@ -301,12 +307,17 @@ static napi_value setZoom(napi_env env, napi_callback_info info) {
 }
 
 
+static void on_cleanup(void *) {
+    g_loaded = 0;
+}
+
+
 static napi_value Init(napi_env env, napi_value exports) {
 #   define ADD_FUNC(fn) \
         do { \
             napi_value jsFunc; \
-            napi_create_function(env, (#fn), NAPI_AUTO_LENGTH, (fn), NULL, &jsFunc); \
-            napi_set_named_property(env, exports, (#fn), jsFunc); \
+            NAPI_CALL(env, napi_create_function(env, (#fn), NAPI_AUTO_LENGTH, (fn), NULL, &jsFunc)); \
+            NAPI_CALL(env, napi_set_named_property(env, exports, (#fn), jsFunc)); \
         } while (0)
     ADD_FUNC(hasAccessibilityPermission);
     ADD_FUNC(getMainScreenSize);
@@ -320,6 +331,8 @@ static napi_value Init(napi_env env, napi_value exports) {
     ADD_FUNC(activateWindow);
     ADD_FUNC(getZoom);
     ADD_FUNC(setZoom);
+    NAPI_CALL(env, napi_add_env_cleanup_hook(env, on_cleanup, NULL));
+    g_loaded = 1;
     return exports;
 }
 
