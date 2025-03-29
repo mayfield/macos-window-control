@@ -11,12 +11,6 @@ typealias GetZoomFunc = @convention(c) (
 ) -> Void
 
 
-// AX API can be insanely slow, exclude known time sinks that do nothing for us...
-let ignoredBundleIds = [
-    "com.apple.WebKit.WebContent",
-]
-
-
 class MWCError: Error {
     var message: String
     var stack: [String] = Thread.callStackSymbols
@@ -92,14 +86,27 @@ struct WindowIdentifier: Codable {
 }
 
 
+// We need to maintain an NSApplication to make NSScreen stay current.
+// See: https://developer.apple.com/documentation/appkit/nsscreen
+var _nsapp: NSApplication? = nil
+func pumpNSApp() {
+    if _nsapp == nil {
+        _nsapp = NSApplication.shared
+    }
+    RunLoop.current.run(until: Date.distantPast)
+}
+
+
 func getActiveScreen() -> NSScreen? {
     // That's right, .main is actually the active screen (screen of focused app)
+    pumpNSApp()
     return NSScreen.main
 }
 
 
 func getMainScreen() -> NSScreen? {
     // Do not use `main`.  Mac os always puts the "main" screen at index 0
+    pumpNSApp()
     if NSScreen.screens.count > 0 {
         return NSScreen.screens[0]
     } else {
@@ -477,6 +484,7 @@ func getActiveScreenSize() throws -> CGRect {
 
 
 func getScreenSizes() -> [CGRect] {
+    pumpNSApp()
     return NSScreen.screens.map({$0.frame})
 }
 
@@ -510,9 +518,7 @@ func getAppDescs() throws -> [AppDesc] {
     if !hasAccessibilityPermission() {
         throw AXPermError()
     }
-    let apps = NSWorkspace.shared.runningApplications.filter {
-        return $0.isFinishedLaunching && !ignoredBundleIds.contains($0.bundleIdentifier ?? "")
-    }
+    let apps = NSWorkspace.shared.runningApplications.filter({$0.isFinishedLaunching})
     return apps.map { app in
         AppDesc(
             name: app.localizedName ?? "",
