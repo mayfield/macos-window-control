@@ -42,8 +42,8 @@ func fullscreenCmd(_ appName: String) throws {
     let adjHeight = sSize.height - menuHeight
     print("Resizing:", adjWidth, adjHeight, 0, menuHeight)
     try resizeCmd(appName, adjWidth, adjHeight, x: 0, y: menuHeight)
-    print("Zooming:", 1 / scale, 0, sSize.height)
-    try zoomCmd(1 / scale, cx: 0, cy: sSize.height)
+    print("Zooming:", 1 / scale, 0, sSize.height - 1)
+    try zoomCmd(1 / scale, cx: 0, cy: sSize.height - 1)
 }
 
 
