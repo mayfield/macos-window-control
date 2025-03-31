@@ -2,13 +2,33 @@ import Foundation
 import Cocoa
 
 
-typealias SetZoomFunc = @convention(c) (Int, UnsafePointer<CGPoint>, Double, Bool) -> Void
-typealias GetZoomFunc = @convention(c) (
+typealias SetZoomParametersFunc = @convention(c) (
+    Int,
+    UnsafePointer<CGPoint>,
+    Double,
+    Bool
+) -> Void
+
+typealias SetZoomParametersForDisplayFunc = @convention(c) (
+    Int,
+    UInt32,
+    UnsafePointer<CGPoint>,
+    Double,
+    Bool
+) -> Void
+
+typealias GetZoomParametersFunc = @convention(c) (
     Int,
     UnsafeMutablePointer<CGPoint>,
     UnsafeMutablePointer<Double>,
     UnsafeMutablePointer<Bool>
 ) -> Void
+
+typealias ZoomPointFunc = @convention(c) (
+    Int,
+    UnsafePointer<CGPoint>,
+    UnsafePointer<CGPoint>
+) -> Int
 
 
 class MWCError: Error {
@@ -130,40 +150,66 @@ func getCGSConnectionID() throws -> Int {
 }
 
 
-var _setZoomFunc: SetZoomFunc? = nil
-func getSetZoomFunc() throws -> SetZoomFunc {
+var _setZoomFunc: SetZoomParametersFunc? = nil
+func getSetZoomParametersFunc() throws -> SetZoomParametersFunc {
     if _setZoomFunc == nil {
-        let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "CGSSetZoomParameters")
+        let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "SLSSetZoomParameters")
         if fnSym == nil {
-            throw MWCError("Failed to find CGSSetZoomParameters function")
+            throw MWCError("Failed to find SLSSetZoomParameters function")
         }
-        _setZoomFunc = unsafeBitCast(fnSym, to: SetZoomFunc.self)
+        _setZoomFunc = unsafeBitCast(fnSym, to: SetZoomParametersFunc.self)
     }
     return _setZoomFunc!
 }
 
 
-var _getZoomFunc: GetZoomFunc? = nil
-func getGetZoomFunc() throws -> GetZoomFunc {
-    if _getZoomFunc == nil {
-        let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "CGSGetZoomParameters")
+var _setZoomForDisplayFunc: SetZoomParametersForDisplayFunc? = nil
+func getSetZoomParametersForDisplayFunc() throws -> SetZoomParametersForDisplayFunc {
+    if _setZoomForDisplayFunc == nil {
+        let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "SLSSetZoomParametersForDisplay")
         if fnSym == nil {
-            throw MWCError("Failed to find CGSGetZoomParameters function")
+            throw MWCError("Failed to find SLSSetZoomParametersForDisplay function")
         }
-        _getZoomFunc = unsafeBitCast(fnSym, to: GetZoomFunc.self)
+        _setZoomForDisplayFunc = unsafeBitCast(fnSym, to: SetZoomParametersForDisplayFunc.self)
+    }
+    return _setZoomForDisplayFunc!
+}
+
+
+var _getZoomFunc: GetZoomParametersFunc? = nil
+func getGetZoomParametersFunc() throws -> GetZoomParametersFunc {
+    if _getZoomFunc == nil {
+        let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "SLSGetZoomParameters")
+        if fnSym == nil {
+            throw MWCError("Failed to find SLSGetZoomParameters function")
+        }
+        _getZoomFunc = unsafeBitCast(fnSym, to: GetZoomParametersFunc.self)
     }
     return _getZoomFunc!
 }
 
 
-func setZoom(_ scale: Double, center: CGPoint? = nil, smooth: Bool? = nil) throws {
-    var _center: CGPoint
-    if let center = center {
+var _zoomPointFunc: ZoomPointFunc? = nil
+func getZoomPointFunc() throws -> ZoomPointFunc {
+    if _zoomPointFunc == nil {
+        let fnSym = dlsym(dlopen(nil, RTLD_LAZY), "SLSZoomPoint")
+        if fnSym == nil {
+            throw MWCError("Failed to find SLSZoomPoint function")
+        }
+        _zoomPointFunc = unsafeBitCast(fnSym, to: ZoomPointFunc.self)
+    }
+    return _zoomPointFunc!
+}
+
+
+func setZoom(_ scale: Double, center centerOpt: CGPoint? = nil, smooth: Bool? = nil) throws {
+    var center: CGPoint
+    if let c = centerOpt {
         // X, Y get floored, round first...
-        _center = CGPoint(x: round(center.x), y: round(center.y))
+        center = CGPoint(x: round(c.x), y: round(c.y))
     } else {
-        let (_, center, _) = try getZoom()
-        _center = center
+        let (_, c, _) = try getZoom()
+        center = c
     }
     var _smooth: Bool
     if let smooth = smooth {
@@ -179,17 +225,30 @@ func setZoom(_ scale: Double, center: CGPoint? = nil, smooth: Bool? = nil) throw
     //  3. setZoom(...args)  # ensure args are identical to step 1.
     // Expect no corruption on screen if it worked.
     let cid = try getCGSConnectionID()
-    let setZoomFn = try getSetZoomFunc()
-    withUnsafePointer(to: &_center) {
-        setZoomFn(cid, $0, scale, !_smooth)
-        setZoomFn(cid, $0, scale, _smooth)
+    if centerOpt == nil {
+        let setZoomFn = try getSetZoomParametersFunc()
+        withUnsafePointer(to: &center) { cPtr in
+            setZoomFn(cid, cPtr, scale, !_smooth)
+            setZoomFn(cid, cPtr, scale, _smooth)
+        }
+    } else {
+        var displayIds: [CGDirectDisplayID] = [0]
+        var count: UInt32 = 0
+        if CGGetDisplaysWithPoint(center, /*maxDisplays*/ 1, &displayIds, &count) != .success || count < 1 {
+            throw MWCError("Failed to find display based on center point")
+        }
+        let setZoomFn = try getSetZoomParametersForDisplayFunc()
+        withUnsafePointer(to: &center) { cPtr in
+            setZoomFn(cid, displayIds[0], cPtr, scale, !_smooth)
+            setZoomFn(cid, displayIds[0], cPtr, scale, _smooth)
+        }
     }
 }
 
 
 func getZoom() throws -> (Double, CGPoint, Bool) {
     let cid = try getCGSConnectionID()
-    let getZoomFn = try getGetZoomFunc()
+    let getZoomFn = try getGetZoomParametersFunc()
     var center = CGPoint.zero
     var factor: Double = 0.0
     var smooth: Bool = false

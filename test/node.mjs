@@ -85,7 +85,7 @@ test('setZoom', () => {
         mwc.setZoom({scale: 1});
     }
     try {
-        mwc.setZoom({scale: 2, center: [1000, 1000]});
+        mwc.setZoom({scale: 2, center: [1, 1]});
     } finally {
         mwc.setZoom({scale: 1});
     }

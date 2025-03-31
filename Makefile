@@ -1,3 +1,4 @@
+#SC_FLAGS := -O -g
 SC_FLAGS := -O \
 	-warnings-as-errors
 C_LIB_FLAGS := -emit-library -static \
