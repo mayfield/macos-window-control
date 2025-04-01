@@ -2,6 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert';
 import * as mwc from '../js/index.mjs';
 
+
+function assertIsScreen(screen) {
+    assert(Array.isArray(screen.size));
+    assert(Array.isArray(screen.position));
+    assert(Array.isArray(screen.visibleSize));
+    assert(Array.isArray(screen.visiblePosition));
+    assert.strictEqual(screen.size.length, 2);
+    assert.strictEqual(screen.position.length, 2);
+    assert.strictEqual(screen.visibleSize.length, 2);
+    assert.strictEqual(screen.visiblePosition.length, 2);
+    assert(screen.size.every(x => typeof x === 'number'));
+    assert(screen.position.every(x => typeof x === 'number'));
+    assert(screen.visibleSize.every(x => typeof x === 'number'));
+    assert(screen.visiblePosition.every(x => typeof x === 'number'));
+}
+
+
 test('hasAccessiblityPermission', () => {
     assert(mwc.hasAccessibilityPermission());
 });
@@ -39,11 +56,23 @@ test('getZoom', () => {
     assert.strictEqual(typeof r.center[1], 'number');
 });
 
-test('getZoom-noop-args', () => {
-    let r = mwc.getZoom('unused');
-    assert.strictEqual(typeof r, 'object');
-    r = mwc.getZoom({unused: 'unused'});
-    assert.strictEqual(typeof r, 'object');
+test('getZoom-with-point-arg', () => {
+    for (const point of [[0, 0], [1, 1]]) {
+        const r = mwc.getZoom({point});
+        assert.strictEqual(typeof r, 'object');
+        assert.strictEqual(typeof r.scale, 'number');
+        assert.strictEqual(typeof r.smooth, 'boolean');
+        assert.strictEqual(typeof r.center, 'object');
+        assert(Array.isArray(r.center));
+        assert.strictEqual(typeof r.center[0], 'number');
+        assert.strictEqual(typeof r.center[1], 'number');
+    }
+});
+
+test('getZoom-with-bad-point-arg', () => {
+    for (const point of [[null, 0], [1, null], ['asdf', 'asdf'], [1e8, 1], [1, 1e8], [-1e8, 1], [1, -1e8], [1e8, 1e8], [-1e8, -1e8]]) {
+        assert.throws(() => mwc.getZoom({point}), mwc.ValidationError);
+    }
 });
 
 test('setWindowSize-invalid-window', () => {
@@ -108,42 +137,22 @@ test('setZoom-bad-args', () => {
     }
 });
 
-test('getMainScreenSize', () => {
-    const r = mwc.getMainScreenSize();
-    assert(Array.isArray(r.size));
-    assert(Array.isArray(r.position));
-    assert.strictEqual(r.size.length, 2);
-    assert.strictEqual(r.position.length, 2);
-    assert(r.size.every(x => typeof x === 'number'));
-    assert(r.position.every(x => typeof x === 'number'));
+test('getMainScreen', () => {
+    const s = mwc.getMainScreen();
+    assertIsScreen(s);
 });
 
-test('getActiveScreenSize', () => {
-    const r = mwc.getActiveScreenSize();
-    assert(Array.isArray(r.size));
-    assert(Array.isArray(r.position));
-    assert.strictEqual(r.size.length, 2);
-    assert.strictEqual(r.position.length, 2);
-    assert(r.size.every(x => typeof x === 'number'));
-    assert(r.position.every(x => typeof x === 'number'));
+test('getActiveScreen', () => {
+    const s = mwc.getActiveScreen();
+    assertIsScreen(s);
 });
 
-test('getScreenSizes', () => {
-    const rArr = mwc.getScreenSizes();
-    assert(Array.isArray(rArr));
-    for (const r of rArr) {
-        assert(Array.isArray(r.size));
-        assert(Array.isArray(r.position));
-        assert.strictEqual(r.size.length, 2);
-        assert.strictEqual(r.position.length, 2);
-        assert(r.size.every(x => typeof x === 'number'));
-        assert(r.position.every(x => typeof x === 'number'));
+test('getScreens', () => {
+    const sArr = mwc.getScreens();
+    assert(Array.isArray(sArr));
+    for (const s of sArr) {
+        assertIsScreen(s);
     }
-});
-
-test('getMenuBarHeight', () => {
-    const r = mwc.getMenuBarHeight();
-    assert.strictEqual(typeof r, 'number');
 });
 
 test('getWindowSize', () => {
@@ -225,7 +234,7 @@ test('activateWindow', async () => {
 
 test('spiral', async () => {
     //console.warn("SKIP"); return;
-    const {size: [width, height]} = mwc.getMainScreenSize();
+    const {size: [width, height]} = mwc.getMainScreen();
     const circleSize = (Math.min(width, height) / 2) * 0.5;
     const fps = 60;
     const zoomTime = 0.5;

@@ -36,15 +36,17 @@ struct ErrorResp: Encodable {
 }
 
 
-struct ScreenSize: Encodable {
-    let origin: CGPoint
-    let size: CGSize
-}
-
-
 struct AppWindowIdentifier: Codable {
     var app: AppIdentifier
     var window: WindowIdentifier? = nil
+}
+
+
+struct Screen: Encodable {
+    var size: CGSize
+    var position: CGPoint
+    var visibleSize: CGSize
+    var visiblePosition: CGPoint
 }
 
 
@@ -145,45 +147,45 @@ public func mwc_hasAccessibilityPermission(_ outPtr: UnsafeMutablePointer<CChar>
 }
 
 
-@_cdecl("mwc_getMainScreenSize")
-public func mwc_getMainScreenSize(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+@_cdecl("mwc_getMainScreen")
+public func mwc_getMainScreen(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
     return wrapCall({
-        let rect = try getMainScreenSize()
-        return [
-            "size": [rect.size.width, rect.size.height],
-            "position": [rect.origin.x, rect.origin.y],
-        ]
+        let screen = try getMainScreen()
+        return Screen(
+            size: screen.frame.size,
+            position: screen.frame.origin,
+            visibleSize: screen.visibleFrame.size,
+            visiblePosition: screen.visibleFrame.origin
+        )
     }, outPtr, outSize)
 }
 
 
-@_cdecl("mwc_getActiveScreenSize")
-public func mwc_getActiveScreenSize(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+@_cdecl("mwc_getActiveScreen")
+public func mwc_getActiveScreen(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
     return wrapCall({
-        let rect = try getActiveScreenSize()
-        return [
-            "size": [rect.size.width, rect.size.height],
-            "position": [rect.origin.x, rect.origin.y],
-        ]
+        let screen = try getActiveScreen()
+        return Screen(
+            size: screen.frame.size,
+            position: screen.frame.origin,
+            visibleSize: screen.visibleFrame.size,
+            visiblePosition: screen.visibleFrame.origin
+        )
     }, outPtr, outSize)
 }
 
 
-@_cdecl("mwc_getScreenSizes")
-public func mwc_getScreenSizes(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+@_cdecl("mwc_getScreens")
+public func mwc_getScreens(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
     return wrapCall({
-        return getScreenSizes().map({[
-            "size": [$0.size.width, $0.size.height],
-            "position": [$0.origin.x, $0.origin.y],
-        ]})
-    }, outPtr, outSize)
-}
-
-
-@_cdecl("mwc_getMenuBarHeight")
-public func mwc_getMenuBarHeight(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
-    return wrapCall({
-        return try getMenuBarHeight()
+        return getScreens().map({ screen in
+            Screen(
+                size: screen.frame.size,
+                position: screen.frame.origin,
+                visibleSize: screen.visibleFrame.size,
+                visiblePosition: screen.visibleFrame.origin
+            )
+        })
     }, outPtr, outSize)
 }
 
@@ -257,9 +259,14 @@ public func mwc_activateWindow(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt
 
 
 @_cdecl("mwc_getZoom")
-public func mwc_getZoom(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+public func mwc_getZoom(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
+                        _ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
     return wrapCall({
-        let (scale, center, smooth) = try getZoom()
+        struct Args: Decodable {
+            let point: CGPoint?
+        }
+        let args: Args = try objDecode(argsPtr, size: argsSize)
+        let (scale, center, smooth) = try getZoom(point: args.point)
         struct Resp: Encodable {
             let scale: Double
             let center: CGPoint
