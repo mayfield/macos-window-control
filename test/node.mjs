@@ -57,7 +57,7 @@ test('getZoom', () => {
 });
 
 test('getZoom-with-point-arg', () => {
-    for (const point of [[0, 0], [1, 1]]) {
+    for (const point of [[0, 0], [1, 1], undefined]) {
         const r = mwc.getZoom({point});
         assert.strictEqual(typeof r, 'object');
         assert.strictEqual(typeof r.scale, 'number');
@@ -71,7 +71,7 @@ test('getZoom-with-point-arg', () => {
 
 test('getZoom-with-bad-point-arg', () => {
     for (const point of [[null, 0], [1, null], ['asdf', 'asdf'], [1e8, 1], [1, 1e8], [-1e8, 1], [1, -1e8], [1e8, 1e8], [-1e8, -1e8]]) {
-        assert.throws(() => mwc.getZoom({point}), mwc.ValidationError);
+        assert.throws(() => mwc.getZoom({point}), mwc.MWCError);
     }
 });
 
