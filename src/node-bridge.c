@@ -252,18 +252,18 @@ static napi_value hasAccessibilityPermission(napi_env env, napi_callback_info in
 }
 
 
-static napi_value getMainScreen(napi_env env, napi_callback_info info) {
-    return swiftCallNoArgs(env, mwc_getMainScreen);
+static napi_value getMainDisplay(napi_env env, napi_callback_info info) {
+    return swiftCallNoArgs(env, mwc_getMainDisplay);
 }
 
 
-static napi_value getActiveScreen(napi_env env, napi_callback_info info) {
-    return swiftCallNoArgs(env, mwc_getActiveScreen);
+static napi_value getActiveDisplay(napi_env env, napi_callback_info info) {
+    return swiftCallNoArgs(env, mwc_getActiveDisplay);
 }
 
 
-static napi_value getScreens(napi_env env, napi_callback_info info) {
-    return swiftCallNoArgs(env, mwc_getScreens);
+static napi_value getDisplays(napi_env env, napi_callback_info info) {
+    return swiftCallNoArgs(env, mwc_getDisplays);
 }
 
 
@@ -315,9 +315,9 @@ static napi_value Init(napi_env env, napi_value exports) {
             NAPI_CALL(env, napi_set_named_property(env, exports, (#fn), jsFunc)); \
         } while (0)
     ADD_FUNC(hasAccessibilityPermission);
-    ADD_FUNC(getMainScreen);
-    ADD_FUNC(getActiveScreen);
-    ADD_FUNC(getScreens);
+    ADD_FUNC(getMainDisplay);
+    ADD_FUNC(getActiveDisplay);
+    ADD_FUNC(getDisplays);
     ADD_FUNC(getApps);
     ADD_FUNC(getWindows);
     ADD_FUNC(getWindowSize);

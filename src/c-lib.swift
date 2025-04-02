@@ -141,61 +141,32 @@ func wrapCallDeferred(_ fnClosure: @escaping () throws -> Encodable?,
 
 @_cdecl("mwc_hasAccessibilityPermission")
 public func mwc_hasAccessibilityPermission(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
-    return wrapCall({
-        return hasAccessibilityPermission()
-    }, outPtr, outSize)
+    return wrapCall({hasAccessibilityPermission()}, outPtr, outSize)
 }
 
 
-@_cdecl("mwc_getMainScreen")
-public func mwc_getMainScreen(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
-    return wrapCall({
-        let screen = try getMainScreen()
-        return Screen(
-            size: screen.frame.size,
-            position: screen.frame.origin,
-            visibleSize: screen.visibleFrame.size,
-            visiblePosition: screen.visibleFrame.origin
-        )
-    }, outPtr, outSize)
+@_cdecl("mwc_getMainDisplay")
+public func mwc_getMainDisplay(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+    return wrapCall({try getMainDisplay()}, outPtr, outSize)
 }
 
 
-@_cdecl("mwc_getActiveScreen")
-public func mwc_getActiveScreen(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
-    return wrapCall({
-        let screen = try getActiveScreen()
-        return Screen(
-            size: screen.frame.size,
-            position: screen.frame.origin,
-            visibleSize: screen.visibleFrame.size,
-            visiblePosition: screen.visibleFrame.origin
-        )
-    }, outPtr, outSize)
+@_cdecl("mwc_getActiveDisplay")
+public func mwc_getActiveDisplay(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+    return wrapCall({try getActiveDisplay()}, outPtr, outSize)
 }
 
 
-@_cdecl("mwc_getScreens")
-public func mwc_getScreens(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
-    return wrapCall({
-        return getScreens().map({ screen in
-            Screen(
-                size: screen.frame.size,
-                position: screen.frame.origin,
-                visibleSize: screen.visibleFrame.size,
-                visiblePosition: screen.visibleFrame.origin
-            )
-        })
-    }, outPtr, outSize)
+@_cdecl("mwc_getDisplays")
+public func mwc_getDisplays(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+    return wrapCall({getDisplays()}, outPtr, outSize)
 }
 
 
 @_cdecl("mwc_getApps")
 public func mwc_getApps(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
                         _ deferredCtx: UnsafeRawPointer, _ deferredCallbackRaw: UnsafeRawPointer) {
-    wrapCallDeferred({
-        return try getAppDescs()
-    }, deferredCtx, deferredCallbackRaw)
+    wrapCallDeferred({try getAppDescs()}, deferredCtx, deferredCallbackRaw)
 }
 
 

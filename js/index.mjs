@@ -58,9 +58,9 @@ function wrap(fn) {
 
 
 export const hasAccessibilityPermission = wrap(_mwc.hasAccessibilityPermission);
-export const getMainScreen = wrap(_mwc.getMainScreen);
-export const getActiveScreen = wrap(_mwc.getActiveScreen);
-export const getScreens = wrap(_mwc.getScreens);
+export const getMainDisplay = wrap(_mwc.getMainDisplay);
+export const getActiveDisplay = wrap(_mwc.getActiveDisplay);
+export const getDisplays = wrap(_mwc.getDisplays);
 export const getZoom = wrap(_mwc.getZoom);
 export const setZoom = wrap(_mwc.setZoom);
 export const getApps = wrap(_mwc.getApps);

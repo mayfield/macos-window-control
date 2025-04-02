@@ -103,6 +103,43 @@ struct WindowIdentifier: Codable {
 }
 
 
+struct Display: Codable {
+    var displayId: CGDirectDisplayID
+    var name: String
+    var main: Bool
+    var active: Bool
+    var scaleFactor: CGFloat
+    var size: CGSize
+    var position: CGPoint
+    var visibleSize: CGSize
+    var visiblePosition: CGPoint
+}
+
+
+func screenToDisplay(_ screen: NSScreen) -> Display? {
+    guard let mainScreen = NSScreen.main else {
+        return nil
+    }
+    return Display(
+        displayId: screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as! CGDirectDisplayID,
+        name: screen.localizedName,
+        main: screen.frame.origin.x == 0 && screen.frame.origin.y == 0,
+        active: mainScreen == screen,
+        scaleFactor: screen.backingScaleFactor,
+        size: screen.frame.size,
+        position: CGPoint(
+            x: screen.frame.origin.x, 
+            y: mainScreen.frame.size.height - screen.frame.size.height - screen.frame.origin.y
+        ),
+        visibleSize: screen.visibleFrame.size,
+        visiblePosition: CGPoint(
+            x: screen.visibleFrame.origin.x, 
+            y: mainScreen.frame.size.height - screen.visibleFrame.size.height - screen.visibleFrame.origin.y
+        )
+    )
+}
+
+
 // We need to maintain an NSApplication to make NSScreen stay current.
 // See: https://developer.apple.com/documentation/appkit/nsscreen
 var _nsapp: NSApplication? = nil
@@ -114,30 +151,42 @@ func pumpNSApp() {
 }
 
 
-func getActiveScreen() throws -> NSScreen {
+func getActiveDisplay() throws -> Display {
     // That's right, .main is actually the active screen (screen of focused app)
     pumpNSApp()
     guard let screen = NSScreen.main else {
         throw MWCError("Active screen unavailable")
     }
-    return screen
+    guard let d = screenToDisplay(screen) else {
+        throw MWCError("Error parsing screen")
+    }
+    return d
 }
 
 
-func getMainScreen() throws -> NSScreen {
+func getMainDisplay() throws -> Display {
     // Do not use `main`.  Mac os always puts the "main" screen at index 0
     pumpNSApp()
     if NSScreen.screens.count < 1 {
         throw MWCError("Main screen unavailable")
     }
-    return NSScreen.screens[0]
+    guard let d = screenToDisplay(NSScreen.screens[0]) else {
+        throw MWCError("Error parsing screen")
+    }
+    return d
 }
 
 
-func getScreens() -> [NSScreen] {
+func getDisplays() -> [Display] {
     // Do not use `main`.  Mac os always puts the "main" screen at index 0
     pumpNSApp()
-    return NSScreen.screens
+    var displays: [Display] = []
+    for x in NSScreen.screens {
+        if let display = screenToDisplay(x) {
+            displays.append(display)
+        }
+    }
+    return displays
 }
 
 
@@ -209,11 +258,23 @@ func getGetZoomParametersForDisplayFunc() throws -> GetZoomParametersForDisplayF
 
 
 func getDisplay(for point: CGPoint) throws -> CGDirectDisplayID {
-    var displayIds: [CGDirectDisplayID] = [0]
     var count: UInt32 = 0
-    if CGGetDisplaysWithPoint(point, /*maxDisplays*/ 1, &displayIds, &count) != .success || count < 1 {
+    if CGGetActiveDisplayList(/*maxDisplays*/ 0, nil, &count) != .success {
+        throw MWCError("Failed to get active display list")
+    }
+    print("count", count)
+    var displayIds = Array(repeating: CGDirectDisplayID.zero, count: Int(count))
+    if CGGetActiveDisplayList(/*maxDisplays*/ count, &displayIds, &count) != .success {
+        throw MWCError("Failed to populate active display list")
+    }
+    print(displayIds)
+    if count < 1 {
         throw NotFoundError("Failed to find display for point: \(point)")
     }
+    for x in displayIds {
+        print(x, CGDisplayBounds(x))
+    }
+    print(NSScreen.screens)
     return displayIds[0]
 }
 
