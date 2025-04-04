@@ -270,14 +270,12 @@ func setZoom(_ scale: Double, center centerOpt: CGPoint? = nil, smooth: Bool? = 
     let cid = try getCGSConnectionID()
     if let did = displayId {
         let setZoomFn = try getSetZoomParametersForDisplayFunc()
-        print("setzoom with display", did)
         withUnsafePointer(to: &center) { cPtr in
             setZoomFn(cid, did, cPtr, scale, !_smooth)
             setZoomFn(cid, did, cPtr, scale, _smooth)
         }
     } else {
         let setZoomFn = try getSetZoomParametersFunc()
-        print("setzoom without display")
         withUnsafePointer(to: &center) { cPtr in
             setZoomFn(cid, cPtr, scale, !_smooth)
             setZoomFn(cid, cPtr, scale, _smooth)
