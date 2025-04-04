@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 
 typealias DeferredCallback = @convention(c) (UnsafeRawPointer, UnsafeRawPointer, CInt) -> Void
@@ -159,7 +160,7 @@ public func mwc_getActiveDisplay(_ outPtr: UnsafeMutablePointer<CChar>, _ outSiz
 
 @_cdecl("mwc_getDisplays")
 public func mwc_getDisplays(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
-    return wrapCall({getDisplays()}, outPtr, outSize)
+    return wrapCall({try getDisplays()}, outPtr, outSize)
 }
 
 
@@ -234,10 +235,10 @@ public func mwc_getZoom(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
                         _ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
     return wrapCall({
         struct Args: Decodable {
-            let point: CGPoint?
+            let displayId: CGDirectDisplayID?
         }
         let args: Args = try objDecode(argsPtr, size: argsSize)
-        let (scale, center, smooth) = try getZoom(point: args.point)
+        let (scale, center, smooth) = try getZoom(displayId: args.displayId)
         struct Resp: Encodable {
             let scale: Double
             let center: CGPoint
@@ -256,9 +257,10 @@ public func mwc_setZoom(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
             let scale: Double
             let center: CGPoint?
             let smooth: Bool?
+            let displayId: CGDirectDisplayID?
         }
         let args: Args = try objDecode(argsPtr, size: argsSize)
-        try setZoom(args.scale, center: args.center, smooth: args.smooth)
+        try setZoom(args.scale, center: args.center, smooth: args.smooth, displayId: args.displayId)
         return nil
     }, outPtr, outSize)
 }

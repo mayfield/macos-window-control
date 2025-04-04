@@ -1,5 +1,6 @@
 import Foundation
 import Cocoa
+import CoreGraphics
 
 
 typealias SetZoomParametersFunc = @convention(c) (
@@ -104,11 +105,10 @@ struct WindowIdentifier: Codable {
 
 
 struct Display: Codable {
-    var displayId: CGDirectDisplayID
+    var id: CGDirectDisplayID
     var name: String
     var main: Bool
     var active: Bool
-    var scaleFactor: CGFloat
     var size: CGSize
     var position: CGPoint
     var visibleSize: CGSize
@@ -116,16 +116,16 @@ struct Display: Codable {
 }
 
 
-func screenToDisplay(_ screen: NSScreen) -> Display? {
-    guard let mainScreen = NSScreen.main else {
-        return nil
+func screenToDisplay(_ screen: NSScreen) throws -> Display {
+    if NSScreen.screens.count < 1 {
+        throw MWCError("Main screen unavailable")
     }
+    let mainScreen = NSScreen.screens[0]
     return Display(
-        displayId: screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as! CGDirectDisplayID,
+        id: screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as! CGDirectDisplayID,
         name: screen.localizedName,
         main: screen.frame.origin.x == 0 && screen.frame.origin.y == 0,
-        active: mainScreen == screen,
-        scaleFactor: screen.backingScaleFactor,
+        active: NSScreen.main == screen,
         size: screen.frame.size,
         position: CGPoint(
             x: screen.frame.origin.x, 
@@ -152,41 +152,28 @@ func pumpNSApp() {
 
 
 func getActiveDisplay() throws -> Display {
-    // That's right, .main is actually the active screen (screen of focused app)
+    // That's right, `.main` is actually the active screen (screen of focused app)
     pumpNSApp()
     guard let screen = NSScreen.main else {
         throw MWCError("Active screen unavailable")
     }
-    guard let d = screenToDisplay(screen) else {
-        throw MWCError("Error parsing screen")
-    }
-    return d
+    return try screenToDisplay(screen)
 }
 
 
 func getMainDisplay() throws -> Display {
-    // Do not use `main`.  Mac os always puts the "main" screen at index 0
+    // Do not use `.main`.  Mac os always puts the "main" screen at index 0
     pumpNSApp()
     if NSScreen.screens.count < 1 {
         throw MWCError("Main screen unavailable")
     }
-    guard let d = screenToDisplay(NSScreen.screens[0]) else {
-        throw MWCError("Error parsing screen")
-    }
-    return d
+    return try screenToDisplay(NSScreen.screens[0])
 }
 
 
-func getDisplays() -> [Display] {
-    // Do not use `main`.  Mac os always puts the "main" screen at index 0
+func getDisplays() throws -> [Display] {
     pumpNSApp()
-    var displays: [Display] = []
-    for x in NSScreen.screens {
-        if let display = screenToDisplay(x) {
-            displays.append(display)
-        }
-    }
-    return displays
+    return try NSScreen.screens.map({try screenToDisplay($0)})
 }
 
 
@@ -257,33 +244,10 @@ func getGetZoomParametersForDisplayFunc() throws -> GetZoomParametersForDisplayF
 }
 
 
-func getDisplay(for point: CGPoint) throws -> CGDirectDisplayID {
-    var count: UInt32 = 0
-    if CGGetActiveDisplayList(/*maxDisplays*/ 0, nil, &count) != .success {
-        throw MWCError("Failed to get active display list")
-    }
-    print("count", count)
-    var displayIds = Array(repeating: CGDirectDisplayID.zero, count: Int(count))
-    if CGGetActiveDisplayList(/*maxDisplays*/ count, &displayIds, &count) != .success {
-        throw MWCError("Failed to populate active display list")
-    }
-    print(displayIds)
-    if count < 1 {
-        throw NotFoundError("Failed to find display for point: \(point)")
-    }
-    for x in displayIds {
-        print(x, CGDisplayBounds(x))
-    }
-    print(NSScreen.screens)
-    return displayIds[0]
-}
-
-
-func setZoom(_ scale: Double, center centerOpt: CGPoint? = nil, smooth: Bool? = nil) throws {
+func setZoom(_ scale: Double, center centerOpt: CGPoint? = nil, smooth: Bool? = nil,
+             displayId: CGDirectDisplayID? = nil) throws {
     var center: CGPoint
-    var displayId: CGDirectDisplayID?
     if let c = centerOpt {
-        displayId = try getDisplay(for: c)
         // X, Y get floored by setZoom, round first...
         center = CGPoint(x: round(c.x), y: round(c.y))
     } else {
@@ -306,12 +270,14 @@ func setZoom(_ scale: Double, center centerOpt: CGPoint? = nil, smooth: Bool? = 
     let cid = try getCGSConnectionID()
     if let did = displayId {
         let setZoomFn = try getSetZoomParametersForDisplayFunc()
+        print("setzoom with display", did)
         withUnsafePointer(to: &center) { cPtr in
             setZoomFn(cid, did, cPtr, scale, !_smooth)
             setZoomFn(cid, did, cPtr, scale, _smooth)
         }
     } else {
         let setZoomFn = try getSetZoomParametersFunc()
+        print("setzoom without display")
         withUnsafePointer(to: &center) { cPtr in
             setZoomFn(cid, cPtr, scale, !_smooth)
             setZoomFn(cid, cPtr, scale, _smooth)
@@ -320,7 +286,7 @@ func setZoom(_ scale: Double, center centerOpt: CGPoint? = nil, smooth: Bool? = 
 }
 
 
-func getZoom(point: CGPoint? = nil) throws -> (Double, CGPoint, Bool) {
+func getZoom(displayId: CGDirectDisplayID? = nil) throws -> (Double, CGPoint, Bool) {
     let cid = try getCGSConnectionID()
     var center = CGPoint.zero
     var factor: Double = 0.0
@@ -328,8 +294,7 @@ func getZoom(point: CGPoint? = nil) throws -> (Double, CGPoint, Bool) {
     try withUnsafeMutablePointer(to: &center) { centerPtr in
         try withUnsafeMutablePointer(to: &factor) { factorPtr in
             try withUnsafeMutablePointer(to: &smooth) { smoothPtr in
-                if let p = point {
-                    let did = try getDisplay(for: p)
+                if let did = displayId {
                     let getZoomFn = try getGetZoomParametersForDisplayFunc()
                     getZoomFn(cid, did, centerPtr, factorPtr, smoothPtr)
                 } else {

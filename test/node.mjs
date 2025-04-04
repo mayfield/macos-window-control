@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import * as mwc from '../js/index.mjs';
 
 
-function assertIsScreen(screen) {
+function assertIsDisplay(screen) {
     assert(Array.isArray(screen.size));
     assert(Array.isArray(screen.position));
     assert(Array.isArray(screen.visibleSize));
@@ -70,8 +70,8 @@ test('getZoom-with-point-arg', () => {
 });
 
 test('getZoom-with-bad-point-arg', () => {
-    for (const point of [[null, 0], [1, null], ['asdf', 'asdf'], [1e8, 1], [1, 1e8], [-1e8, 1], [1, -1e8], [1e8, 1e8], [-1e8, -1e8]]) {
-        assert.throws(() => mwc.getZoom({point}), mwc.MWCError);
+    for (const displayId of [-1, 'asdf', 1.5, -1.5, true, false, [], {}]) {
+        assert.throws(() => mwc.getZoom({displayId}), mwc.MWCError);
     }
 });
 
@@ -137,21 +137,21 @@ test('setZoom-bad-args', () => {
     }
 });
 
-test('getMainScreen', () => {
-    const s = mwc.getMainScreen();
-    assertIsScreen(s);
+test('getMainDisplay', () => {
+    const s = mwc.getMainDisplay();
+    assertIsDisplay(s);
 });
 
-test('getActiveScreen', () => {
-    const s = mwc.getActiveScreen();
-    assertIsScreen(s);
+test('getActiveDisplay', () => {
+    const s = mwc.getActiveDisplay();
+    assertIsDisplay(s);
 });
 
-test('getScreens', () => {
-    const sArr = mwc.getScreens();
+test('getDisplays', () => {
+    const sArr = mwc.getDisplays();
     assert(Array.isArray(sArr));
     for (const s of sArr) {
-        assertIsScreen(s);
+        assertIsDisplay(s);
     }
 });
 
@@ -234,7 +234,7 @@ test('activateWindow', async () => {
 
 test('spiral', async () => {
     //console.warn("SKIP"); return;
-    const {size: [width, height]} = mwc.getMainScreen();
+    const {size: [width, height]} = mwc.getMainDisplay();
     const circleSize = (Math.min(width, height) / 2) * 0.5;
     const fps = 60;
     const zoomTime = 0.5;

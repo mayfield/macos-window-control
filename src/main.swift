@@ -31,17 +31,18 @@ func zoomCmd(_ scale: Double? = nil, cx: Double? = nil, cy: Double? = nil) throw
 
 
 func fullscreenCmd(_ appName: String) throws {
-    let display = try getMainDisplay()
+    let display = try getActiveDisplay()
     let appIdent = AppIdentifier(name: appName)
     try activateWindow(appIdent)
     let (_, window) = try getAppWindow(appIdent)
     let titleBarHeight = getTitlebarHeightEstimate(window)
-    let scale = (display.visibleSize.height - titleBarHeight) / display.size.height
-    let adjWidth = display.size.width * scale
-    print("Resizing:", adjWidth, display.visibleSize.height, 0, display.visiblePosition.y)
-    try resizeCmd(appName, adjWidth, display.visibleSize.height, x: 0, y: display.visiblePosition.y)
-    print("Zooming:", 1 / scale, 0, display.size.height - 1)
-    try zoomCmd(1 / scale, cx: 0, cy: display.size.height - 1)
+    let scale = display.size.height / (display.visibleSize.height - titleBarHeight)
+    let size = CGSize(width: display.size.width / scale, height: display.visibleSize.height)
+    print("Resizing:", size, display.visiblePosition)
+    try setWindowSize(appIdent, size, position: display.visiblePosition)
+    let bottomLeft = CGPoint(x: display.position.x, y: display.position.y + display.size.height - 1)
+    print("Zooming:", scale, "center", bottomLeft, "displayId", display.id)
+    try setZoom(scale, center: bottomLeft, displayId: display.id)
 }
 
 
