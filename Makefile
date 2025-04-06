@@ -18,7 +18,7 @@ default: $(CLI) node-build
 
 node-build: $(NODE_BUILD)
 
-$(NODE_BUILD): $(SRCS) Makefile
+$(NODE_BUILD): $(SRCS) Makefile node_modules
 	#npm rebuild --debug
 	npm rebuild
 	touch $@
@@ -34,9 +34,7 @@ $(CLI): $(SRCS) Makefile
 	lipo -create $(OBJ)/$(CLI).arm64 $(OBJ)/$(CLI).x86_64 -output $(CLI)
 
 c-lib: $(SRCS) Makefile
-	swiftc src/core.swift src/c-lib.swift -target arm64-apple-macos11 $(SC_FLAGS) $(C_LIB_FLAGS) -o $(OBJ)/mwc.a.arm64
-	swiftc src/core.swift src/c-lib.swift -target x86_64-apple-macos11 $(SC_FLAGS) $(C_LIB_FLAGS) -o $(OBJ)/mwc.a.x86_64
-	lipo -create $(OBJ)/mwc.a.arm64 $(OBJ)/mwc.a.x86_64 -output $(OBJ)/mwc.a
+	swiftc src/core.swift src/c-lib.swift -target $(ARCH)-apple-macos11 $(SC_FLAGS) $(C_LIB_FLAGS) -o $(OBJ)/mwc.a
 
 test: $(TESTS) Makefile node-build
 	node --test 'test/*'
