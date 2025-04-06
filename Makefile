@@ -11,6 +11,10 @@ TESTS := $(wildcard test/*)
 OBJ := obj
 NODE_BUILD := .node-build
 
+ifeq ($(ARCH), x64)
+  override ARCH := x86_64
+endif
+
 
 default: $(CLI) node-build
 
