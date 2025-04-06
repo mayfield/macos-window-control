@@ -302,7 +302,7 @@ static napi_value setZoom(napi_env env, napi_callback_info info) {
 }
 
 
-static void on_cleanup(void *) {
+static void on_cleanup(void * _) {
     g_loaded = 0;
 }
 
