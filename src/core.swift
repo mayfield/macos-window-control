@@ -564,8 +564,12 @@ func getTitlebarHeightEstimate(_ window: AXUIElement) -> Double {
 }
 
 
-func hasAccessibilityPermission() -> Bool {
-    return AXIsProcessTrusted()
+func hasAccessibilityPermission(prompt: Bool? = nil) -> Bool {
+    if prompt == true {
+        return AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeRetainedValue(): true] as CFDictionary)
+    } else {
+        return AXIsProcessTrusted()
+    }
 }
 
 

@@ -60,6 +60,8 @@ func usageAndExit() {
     print("  Command 'fullscreen':")
     print("    Args: APP")
     print("    Example: \(prog) ZwiftAppSilicon")
+    print("")
+    print("  Command 'permission':")
     exit(1)
 }
 
@@ -114,6 +116,12 @@ func main() throws {
         }
         let appName = args[2]
         return try fullscreenCmd(appName)
+    } else if cmdName == "permission" {
+        if hasAccessibilityPermission(prompt: true) {
+            print("true")
+        } else {
+            print("false")
+        }
     } else {
         if cmdName != "--help" {
             print("Invalid COMMAND:", cmdName)

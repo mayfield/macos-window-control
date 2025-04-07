@@ -141,8 +141,15 @@ func wrapCallDeferred(_ fnClosure: @escaping () throws -> Encodable?,
 
 
 @_cdecl("mwc_hasAccessibilityPermission")
-public func mwc_hasAccessibilityPermission(_ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
-    return wrapCall({hasAccessibilityPermission()}, outPtr, outSize)
+public func mwc_hasAccessibilityPermission(_ argsPtr: UnsafePointer<CChar>, _ argsSize: CInt,
+                                           _ outPtr: UnsafeMutablePointer<CChar>, _ outSize: CInt) -> CInt {
+    return wrapCall({
+        struct Args: Decodable {
+            let prompt: Bool?
+        }
+        let args: Args = try objDecode(argsPtr, size: argsSize)
+        return hasAccessibilityPermission(prompt: args.prompt)
+    }, outPtr, outSize)
 }
 
 

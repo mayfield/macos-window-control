@@ -248,7 +248,7 @@ error:
 
 
 static napi_value hasAccessibilityPermission(napi_env env, napi_callback_info info) {
-    return swiftCallNoArgs(env, mwc_hasAccessibilityPermission);
+    return swiftCall(env, info, mwc_hasAccessibilityPermission);
 }
 
 
